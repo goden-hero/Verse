@@ -17,11 +17,12 @@ class OllamaClient:
         self.api_url = api_url or settings.ollama_url
         self.model = model or settings.ollama_model
 
-    def generate_tags(self, song_info: dict) -> dict | None:
+    def generate_tags(self, song_info: dict, max_retries: int = 3) -> dict | None:
         """Queries Ollama to generate semantic enrichment tags for a song.
 
         Args:
             song_info: Dict containing song metadata context (title, artist, BPM, etc.)
+            max_retries: Number of attempts in case of network or decoding errors.
 
         Returns:
             Parsed JSON dict with semantic tags, or None on failure.
@@ -61,34 +62,50 @@ class OllamaClient:
             "stream": False,
         }
 
-        try:
-            logger.info("Querying Ollama (model: %s) for semantic enrichment...", self.model)
-            response = requests.post(self.api_url, json=payload, timeout=30.0)
-            if response.status_code != 200:
-                logger.error(
-                    "Ollama API request failed with status code %d: %s",
-                    response.status_code,
-                    response.text,
+        response_text = ""
+        for attempt in range(max_retries):
+            try:
+                logger.info(
+                    "Querying Ollama (model: %s, attempt %d/%d) for semantic enrichment...", 
+                    self.model, attempt + 1, max_retries
                 )
-                return None
+                # Increased timeout to 60.0s to allow model loading
+                response = requests.post(self.api_url, json=payload, timeout=60.0)
+                if response.status_code != 200:
+                    logger.warning(
+                        "Ollama API request failed (status %d) on attempt %d: %s",
+                        response.status_code,
+                        attempt + 1,
+                        response.text,
+                    )
+                    continue
 
-            data = response.json()
-            response_text = data.get("response", "").strip()
-            if not response_text:
-                logger.warning("Empty response received from Ollama.")
-                return None
+                data = response.json()
+                response_text = data.get("response", "").strip()
+                if not response_text and "thinking" in data:
+                    logger.info("Empty response but 'thinking' field present; falling back to thinking content.")
+                    response_text = data.get("thinking", "").strip()
 
-            # Parse LLM response
-            parsed = json.loads(response_text)
-            return self._validate_and_sanitize(parsed)
+                if not response_text:
+                    logger.warning("Empty response received from Ollama on attempt %d.", attempt + 1)
+                    continue
 
-        except requests.exceptions.RequestException as e:
-            logger.error("Connection error while querying Ollama: %s", e)
-        except json.JSONDecodeError as e:
-            logger.error("Failed to decode JSON response from Ollama: %s. Response content: %s", e, response_text)
-        except Exception as e:
-            logger.error("Unexpected error in OllamaClient: %s", e)
+                # Parse LLM response
+                parsed = json.loads(response_text)
+                return self._validate_and_sanitize(parsed)
 
+            except requests.exceptions.RequestException as e:
+                logger.warning("Connection error on attempt %d: %s", attempt + 1, e)
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Failed to decode JSON response on attempt %d: %s. Content: %s", 
+                    attempt + 1, e, response_text
+                )
+            except Exception as e:
+                logger.error("Unexpected error in OllamaClient on attempt %d: %s", attempt + 1, e)
+                break
+
+        logger.error("All %d attempts to query Ollama failed.", max_retries)
         return None
 
     def _validate_and_sanitize(self, data: dict) -> dict:

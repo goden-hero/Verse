@@ -13,6 +13,22 @@ from app.metadata.semantic import OllamaClient, enrich_song_semantics
 from app.main import run_enrich_semantic, main
 
 
+def get_real_ollama_info():
+    """Checks if local Ollama server is running and returns (url, model) if available, else (None, None)."""
+    url = "http://localhost:11434"
+    try:
+        response = requests.get(f"{url}/api/tags", timeout=2.0)
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get("models", [])
+            if models:
+                # Use the first available model name
+                return f"{url}/api/generate", models[0]["name"]
+    except Exception:
+        pass
+    return None, None
+
+
 # =====================================================================
 # 1. Ollama Integration (OllamaClient) Tests
 # =====================================================================
@@ -311,4 +327,102 @@ def test_run_enrich_semantic_cli_handling(db_session: Session, mock_db_song: Son
                 db_session=db_session,
                 force_refresh=True
             )
+
+
+# =====================================================================
+# 5. Real Ollama Server Integration Tests
+# =====================================================================
+
+def test_ollama_client_real_success():
+    """Verify OllamaClient successfully queries a real running Ollama server if available."""
+    api_url, model = get_real_ollama_info()
+    if not api_url:
+        pytest.skip("Active Ollama server not found on localhost:11434")
+        
+    client = OllamaClient(api_url=api_url, model=model)
+    song_info = {
+        "title": "Enter Sandman",
+        "artist": "Metallica",
+        "album": "Metallica",
+        "genre": "Heavy Metal",
+        "bpm": 123.0,
+        "key": "E Minor",
+        "year": 1991,
+        "duration": 331.0
+    }
+    
+    tags = client.generate_tags(song_info)
+    assert tags is not None
+    assert isinstance(tags, dict)
+    
+    # Check that all keys are present in sanitized response
+    for key in ["moods", "activities", "themes", "descriptors", "energy", "vocal_style", "language"]:
+        assert key in tags
+        
+    assert isinstance(tags["moods"], list)
+    assert isinstance(tags["activities"], list)
+    assert isinstance(tags["themes"], list)
+    assert isinstance(tags["descriptors"], list)
+    assert isinstance(tags["energy"], str)
+    assert tags["energy"] in ["low", "medium", "high"]
+
+
+def test_enrich_song_semantics_real_flow(db_session: Session, mock_db_song: Song):
+    """Verify database caching and refresh behavior using the real active Ollama server."""
+    api_url, model = get_real_ollama_info()
+    if not api_url:
+        pytest.skip("Active Ollama server not found on localhost:11434")
+        
+    client = OllamaClient(api_url=api_url, model=model)
+    
+    # 1. Run enrichment
+    success = enrich_song_semantics(
+        song_id=mock_db_song.id,
+        db_session=db_session,
+        client=client
+    )
+    assert success is True
+    
+    # Verify semantic_tags has correct record
+    tag_record = db_session.get(SemanticTags, mock_db_song.id)
+    assert tag_record is not None
+    assert isinstance(json.loads(tag_record.moods), list)
+    assert tag_record.energy in ["low", "medium", "high"]
+    
+    # 2. Second run without force_refresh (should read from cache without hitting requests.post)
+    with patch("requests.post") as mock_post:
+        success_cache = enrich_song_semantics(
+            song_id=mock_db_song.id,
+            db_session=db_session,
+            client=client
+        )
+        assert success_cache is True
+        mock_post.assert_not_called()
+
+
+def test_run_enrich_semantic_cli_handling_real(db_session: Session, mock_db_song: Song):
+    """Verify CLI runner enrichment with a real active Ollama server."""
+    api_url, model = get_real_ollama_info()
+    if not api_url:
+        pytest.skip("Active Ollama server not found on localhost:11434")
+        
+    args = argparse.Namespace(command="enrich-semantic", force=True, limit=1)
+    
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__enter__.return_value = db_session
+    mock_session_ctx.return_value = mock_session_ctx
+    mock_get_session = MagicMock(return_value=mock_session_ctx)
+    
+    custom_settings = Settings(ollama_url=api_url, ollama_model=model)
+    
+    with patch("app.main.get_session", mock_get_session):
+        with patch("app.metadata.semantic.settings", custom_settings), \
+             patch("app.main.settings", custom_settings):
+            run_enrich_semantic(args)
+            
+            # Check that DB was populated with real tags
+            tag_record = db_session.get(SemanticTags, mock_db_song.id)
+            assert tag_record is not None
+            assert isinstance(json.loads(tag_record.moods), list)
+
 
