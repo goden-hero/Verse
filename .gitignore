@@ -1,0 +1,12 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+data/
+*.db
+*.log
+music_rec.egg-info/
+openl3_test/
