@@ -55,6 +55,10 @@ def init_db() -> None:
         raise
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
 def get_session() -> Generator[Session, None, None]:
     """Dependency / generator context manager for db sessions.
 

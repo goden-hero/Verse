@@ -182,3 +182,82 @@ class ListeningHistory(Base):
             f"<ListeningHistory(song_id={self.song_id}, play_count={self.play_count}, "
             f"likes={self.likes})>"
         )
+
+
+class Playlist(Base):
+    """Represents a manual or AI generated playlist."""
+
+    __tablename__ = "playlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    prompt: Mapped[str | None] = mapped_column(String, nullable=True)
+    strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+    generated_by: Mapped[str] = mapped_column(
+        String, default="MANUAL", nullable=False
+    )  # MANUAL / AI / HYBRID
+
+    # Relationship to ordered PlaylistSongs
+    songs: Mapped[list["PlaylistSong"]] = relationship(
+        back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistSong.position"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Playlist(id={self.id}, name='{self.name}', generated_by='{self.generated_by}')>"
+
+
+class PlaylistSong(Base):
+    """Associative model linking songs to playlists with ordering."""
+
+    __tablename__ = "playlist_songs"
+
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    )
+    song_id: Mapped[int] = mapped_column(
+        ForeignKey("songs.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Relationships
+    playlist: Mapped["Playlist"] = relationship(back_populates="songs")
+    song: Mapped["Song"] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<PlaylistSong(playlist_id={self.playlist_id}, song_id={self.song_id}, position={self.position})>"
+
+
+class AssistantHistory(Base):
+    """Stores natural language assistant prompt conversations and outcomes."""
+
+    __tablename__ = "assistant_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    prompt: Mapped[str] = mapped_column(String, nullable=False)
+    plan: Mapped[str] = mapped_column(String, nullable=False)  # JSON-encoded array
+    result: Mapped[str] = mapped_column(String, nullable=False)  # JSON-encoded status logs
+
+    def __repr__(self) -> str:
+        return f"<AssistantHistory(id={self.id}, timestamp={self.timestamp})>"
+
+
+class LLMCache(Base):
+    """Caches generated outputs from local LLM queries to speed up identical prompts."""
+
+    __tablename__ = "llm_cache"
+
+    prompt_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    response: Mapped[str] = mapped_column(String, nullable=False)  # JSON-encoded response
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<LLMCache(prompt_hash='{self.prompt_hash[:10]}...', created_at={self.created_at})>"
+

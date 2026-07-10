@@ -58,3 +58,19 @@ def register_recommender(name: str, recommender: BaseRecommender) -> None:
 def get_recommender(name: str) -> BaseRecommender:
     """Convenience helper to retrieve a recommender from the global registry."""
     return _global_registry.get(name)
+
+
+# Register default strategies
+try:
+    from app.recommendations.vector import VectorRecommender
+    from app.recommendations.content import ContentRecommender
+    from app.recommendations.hybrid import HybridRecommender
+
+    vector_rec = VectorRecommender()
+    content_rec = ContentRecommender()
+
+    register_recommender("vector", vector_rec)
+    register_recommender("content", content_rec)
+    register_recommender("hybrid", HybridRecommender(recommenders=[vector_rec, content_rec], weights=[0.5, 0.5]))
+except ImportError as e:
+    logger.warning("Could not auto-register default recommenders: %s", e)

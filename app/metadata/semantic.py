@@ -6,6 +6,7 @@ import requests
 from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.database.models import AudioFeatures, MusicBrainzMetadata, SemanticTags, Song
+from app.utils.ollama import resolve_ollama_model
 
 logger = logging.getLogger("music_rec.metadata.semantic")
 
@@ -15,7 +16,8 @@ class OllamaClient:
 
     def __init__(self, api_url: str | None = None, model: str | None = None) -> None:
         self.api_url = api_url or settings.ollama_url
-        self.model = model or settings.ollama_model
+        configured_model = model or settings.ollama_model
+        self.model = resolve_ollama_model(self.api_url, configured_model)
 
     def generate_tags(self, song_info: dict, max_retries: int = 3) -> dict | None:
         """Queries Ollama to generate semantic enrichment tags for a song.
@@ -41,17 +43,18 @@ class OllamaClient:
             f"Duration: {song_info.get('duration', 'Unknown')} seconds\n\n"
             "Identify the moods, activities, themes, instruments/descriptors, energy level, "
             "vocal style, and language. Do not guess blindly, use musical characteristics.\n"
-            "Generate tag classifications matching this JSON schema exactly:\n"
+            "Generate tag classifications matching this JSON schema format exactly, replacing placeholders with actual song characteristics:\n"
             "{\n"
-            '  "moods": ["value1", "value2"],\n'
-            '  "activities": ["value1", "value2"],\n'
-            '  "themes": ["value1", "value2"],\n'
-            '  "descriptors": ["value1", "value2"],\n'
+            '  "moods": ["mood1", "mood2"],\n'
+            '  "activities": ["activity1", "activity2"],\n'
+            '  "themes": ["theme1", "theme2"],\n'
+            '  "descriptors": ["instrument1", "descriptor2"],\n'
             '  "energy": "low|medium|high",\n'
-            '  "vocal_style": "value",\n'
-            '  "language": "value"\n'
+            '  "vocal_style": "vocalstyle",\n'
+            '  "language": "language"\n'
             "}\n"
             "All keys must be present. Energy must be one of low, medium, or high.\n"
+            "CRITICAL: Do not output literal placeholder values like 'value1', 'value2', 'mood1', 'activity1', 'vocalstyle', etc. Replace them with specific descriptive tags based on the song's characteristics.\n"
             "Response must be valid JSON only. Do not add conversational text or markdown blocks."
         )
 
@@ -69,8 +72,8 @@ class OllamaClient:
                     "Querying Ollama (model: %s, attempt %d/%d) for semantic enrichment...", 
                     self.model, attempt + 1, max_retries
                 )
-                # Increased timeout to 60.0s to allow model loading
-                response = requests.post(self.api_url, json=payload, timeout=60.0)
+                # Increased timeout to 120.0s to allow model loading and deep reasoning
+                response = requests.post(self.api_url, json=payload, timeout=120.0)
                 if response.status_code != 200:
                     logger.warning(
                         "Ollama API request failed (status %d) on attempt %d: %s",
@@ -91,7 +94,13 @@ class OllamaClient:
                     continue
 
                 # Parse LLM response
-                parsed = json.loads(response_text)
+                try:
+                    parsed = json.loads(response_text)
+                except json.JSONDecodeError as jde:
+                    logger.warning("Failed to decode JSON response on attempt %d: %s. Attempting regex repair fallback...", attempt + 1, jde)
+                    parsed = self._extract_partial_json(response_text)
+                    if not any(parsed.values()):
+                        raise jde
                 return self._validate_and_sanitize(parsed)
 
             except requests.exceptions.RequestException as e:
@@ -108,15 +117,59 @@ class OllamaClient:
         logger.error("All %d attempts to query Ollama failed.", max_retries)
         return None
 
+    def _extract_partial_json(self, text: str) -> dict:
+        """Helper to extract semantic enrichment keys using regular expressions from malformed JSON."""
+        import re
+        result = {}
+        
+        # Extract list fields: moods, activities, themes, descriptors
+        for key in ["moods", "activities", "themes", "descriptors"]:
+            pattern = rf'"{key}"\s*:\s*\[(.*?)\]'
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                list_content = match.group(1)
+                try:
+                    result[key] = json.loads(f"[{list_content}]")
+                except Exception:
+                    # Parse manually by splitting commas and stripping quotes
+                    items = []
+                    for item in list_content.split(","):
+                        item = item.strip().strip('"').strip("'")
+                        if item:
+                            items.append(item)
+                    result[key] = items
+            else:
+                result[key] = []
+
+        # Extract string fields: energy, vocal_style, language
+        for key in ["energy", "vocal_style", "language"]:
+            pattern = rf'"{key}"\s*:\s*"(.*?)"'
+            match = re.search(pattern, text)
+            if match:
+                result[key] = match.group(1).strip()
+            else:
+                result[key] = ""
+
+        return result
+
     def _validate_and_sanitize(self, data: dict) -> dict:
         """Validates response fields, applying defaults for missing keys or wrong types."""
         sanitized = {}
+        placeholders = {
+            "value1", "value2", "value", "mood1", "mood2", "mood", 
+            "activity1", "activity2", "activity", "theme1", "theme2", "theme",
+            "descriptor1", "descriptor2", "descriptor", "instrument1", "instrument2",
+            "vocalstyle", "vocal_style", "language"
+        }
 
         # List fields
         for key in ["moods", "activities", "themes", "descriptors"]:
             val = data.get(key)
             if isinstance(val, list):
-                sanitized[key] = [str(x).strip().lower() for x in val if x]
+                sanitized[key] = [
+                    str(x).strip().lower() for x in val 
+                    if x and str(x).strip().lower() not in placeholders
+                ]
             else:
                 sanitized[key] = []
 
@@ -124,7 +177,11 @@ class OllamaClient:
         for key in ["energy", "vocal_style", "language"]:
             val = data.get(key)
             if val is not None:
-                sanitized[key] = str(val).strip().lower()
+                cleaned = str(val).strip().lower()
+                if cleaned in placeholders:
+                    sanitized[key] = ""
+                else:
+                    sanitized[key] = cleaned
             else:
                 sanitized[key] = ""
 

@@ -202,11 +202,15 @@ class ContentEmbeddingGenerator:
 
 def rebuild_content_pipeline(
     db_session: Session,
-    scaler_path: Path,
-    pca_path: Path,
-    index_path: Path,
+    scaler_path: str | Path,
+    pca_path: str | Path,
+    index_path: str | Path,
 ) -> bool:
     """Fits scaler & PCA on the entire database library, saves them, and builds the FAISS index."""
+    scaler_path = Path(scaler_path)
+    pca_path = Path(pca_path)
+    index_path = Path(index_path)
+
     records = db_session.query(AudioFeatures).all()
     if not records:
         logger.warning("No audio features in DB. Pipeline cannot be rebuilt.")

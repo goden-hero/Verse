@@ -35,7 +35,8 @@ def get_real_ollama_info():
 
 def test_ollama_client_payload_json_format():
     """Verify that the request payload to Ollama specifies "format": "json"."""
-    client = OllamaClient(api_url="http://localhost:11434/api/generate", model="llama3")
+    with patch("app.metadata.semantic.resolve_ollama_model", return_value="llama3"):
+        client = OllamaClient(api_url="http://localhost:11434/api/generate", model="llama3")
     
     mock_response = MagicMock()
     mock_response.status_code = 200

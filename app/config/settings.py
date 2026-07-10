@@ -61,6 +61,21 @@ class Settings:
         default_factory=lambda: os.getenv("OLLAMA_MODEL", "llama3")
     )
 
+    # Ollama timeouts
+    ollama_connect_timeout: float = field(
+        default_factory=lambda: float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "5.0"))
+    )
+
+    # Ollama read/inference timeout (120.0s)
+    ollama_read_timeout: float = field(
+        default_factory=lambda: float(os.getenv("OLLAMA_READ_TIMEOUT", "120.0"))
+    )
+
+    # Ollama model keep alive ("20m" default)
+    ollama_keep_alive: str = field(
+        default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "20m")
+    )
+
 
 # Global settings instance
 settings = Settings()
