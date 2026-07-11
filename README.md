@@ -107,25 +107,48 @@ graph TD
 
 ### 1. Prerequisites
 - **Python:** Version `>= 3.13`
-- **Ollama:** Make sure Ollama is installed and running locally.
+- **System Audio Utilities (Linux only):** PySide6 leverages GStreamer to play music files via QtMultimedia. Ensure you install the GStreamer backend and plugins:
   ```bash
-  # Pull the default LLM (e.g. Qwen2.5 or Llama3)
-  ollama pull qwen2.5:latest
+  # Debian/Ubuntu
+  sudo apt-get install libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-pulseaudio
+
+  # Fedora
+  sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-free-extras gstreamer1-plugins-ugly-free gstreamer1-libav
+  ```
+- **Ollama:** Make sure Ollama is installed and running locally to support the natural language AI Assistant and semantic indexing.
+  ```bash
+  # Start Ollama and download a lightweight model
+  ollama pull qwen3:4b
   ```
 
 ### 2. Installation
 Clone the repository and install the package with development dependencies in a virtual environment:
 ```bash
-# Create a virtual environment
+# Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install with development packages
+# Install the package and dependencies in editable mode
 pip install -e .[dev]
 ```
 
-### 3. Database Initialization
-Verify database tables are up-to-date by running Alembic migrations:
+### 3. Configuration
+You can customize settings by creating a `.env` file in the project root:
+```env
+# Database Path
+DATABASE_URL=sqlite:///data/music_rec.db
+
+# Ollama parameters
+OLLAMA_URL=http://localhost:11434/api/generate
+OLLAMA_MODEL=qwen3:4b
+OLLAMA_READ_TIMEOUT=120.0
+
+# Supported formats (comma separated)
+SUPPORTED_FORMATS=.mp3,.flac,.wav,.m4a,.ogg
+```
+
+### 4. Database Initialization
+Verify database tables are initialized and up-to-date by running Alembic migrations:
 ```bash
 alembic upgrade head
 ```
