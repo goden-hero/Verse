@@ -191,22 +191,67 @@ class Playlist(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
     prompt: Mapped[str | None] = mapped_column(String, nullable=True)
     strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+    seed_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    seed_song_id: Mapped[int | None] = mapped_column(
+        ForeignKey("songs.id", ondelete="SET NULL"), nullable=True
+    )
     generated_by: Mapped[str] = mapped_column(
         String, default="MANUAL", nullable=False
     )  # MANUAL / AI / HYBRID
+    generator_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_from: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Relationship to ordered PlaylistSongs
+    # Relationships
     songs: Mapped[list["PlaylistSong"]] = relationship(
         back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistSong.position"
+    )
+    seed_song: Mapped["Song | None"] = relationship(foreign_keys=[seed_song_id])
+    sessions: Mapped[list["PlaybackSession"]] = relationship(
+        back_populates="playlist", cascade="all, delete-orphan", order_by="PlaybackSession.started_at.desc()"
     )
 
     def __repr__(self) -> str:
         return f"<Playlist(id={self.id}, name='{self.name}', generated_by='{self.generated_by}')>"
+
+
+class PlaybackSession(Base):
+    """Tracks active and historical playback sessions for playlists."""
+
+    __tablename__ = "playback_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    playlist_id: Mapped[int | None] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_song_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_position: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Relationships
+    playlist: Mapped["Playlist | None"] = relationship(back_populates="sessions")
+
+    def __repr__(self) -> str:
+        return (
+            f"<PlaybackSession(id={self.id}, playlist_id={self.playlist_id}, "
+            f"started_at={self.started_at}, completed={self.completed})>"
+        )
 
 
 class PlaylistSong(Base):

@@ -108,6 +108,13 @@ def run_gui(args) -> None:
     sys.exit(app.exec())
 
 
+def run_web(args) -> None:
+    """CLI handler for launching the FastAPI web server."""
+    logger.info("Initializing FastAPI Web Application...")
+    import uvicorn
+    uvicorn.run("app.api.server:app", host=args.host, port=args.port, reload=args.reload)
+
+
 def main() -> None:
     """Initializes the application and boots the CLI."""
     setup_logging()
@@ -168,6 +175,30 @@ def main() -> None:
     # gui subcommand
     gui_parser = subparsers.add_parser("gui", help="Boot the PySide6 Desktop GUI.")
 
+    # web subcommand
+    web_parser = subparsers.add_parser("web", help="Boot the FastAPI Web Server.")
+    # serve subcommand (alias for web)
+    serve_parser = subparsers.add_parser("serve", help="Boot the FastAPI Web Server (alias for web).")
+    
+    for parser_obj in [web_parser, serve_parser]:
+        parser_obj.add_argument(
+            "--host",
+            type=str,
+            default="127.0.0.1",
+            help="Host address to bind to (default: 127.0.0.1).",
+        )
+        parser_obj.add_argument(
+            "--port",
+            type=int,
+            default=8000,
+            help="Port to listen on (default: 8000).",
+        )
+        parser_obj.add_argument(
+            "--reload",
+            action="store_true",
+            help="Enable auto-reload.",
+        )
+
     args = parser.parse_args()
 
     if args.command == "enrich-semantic":
@@ -182,6 +213,8 @@ def main() -> None:
         run_show_history(args)
     elif args.command == "gui":
         run_gui(args)
+    elif args.command in ("web", "serve"):
+        run_web(args)
     else:
         parser.print_help()
 

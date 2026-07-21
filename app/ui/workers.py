@@ -97,6 +97,7 @@ class ScanWorker(QThread):
                             album=meta.album or "Unknown",
                             duration=meta.duration,
                             original_genre=meta.genre,
+                            cover_art=meta.cover_art,
                         )
                         session.add(song)
                         session.commit()  # commit to generate ID
@@ -197,6 +198,7 @@ class RecommendWorker(QThread):
         vector_index_path: str | Path = "data/vector_index.bin",
     ) -> None:
         super().__init__()
+        self.strategy_ui = strategy
         self.strategy = strategy.lower()
         self.song_id = song_id
         self.limit = limit
@@ -205,15 +207,20 @@ class RecommendWorker(QThread):
     def run(self) -> None:
         try:
             with get_session() as session:
+                from app.recommendations.selector import map_ui_to_backend_strategy
+                backend_strategy = map_ui_to_backend_strategy(
+                    self.strategy_ui, session, self.vector_index_path
+                )
+
                 # Retrieve recommender from registry
-                recommender = get_recommender(self.strategy)
+                recommender = get_recommender(backend_strategy)
                 if not recommender:
-                    self.error.emit(f"Unknown recommendation strategy: {self.strategy}")
+                    self.error.emit(f"Unknown recommendation strategy: {backend_strategy}")
                     return
 
                 # If Vector or Hybrid, we need to pass the vector index path dynamically
                 # using the design of VectorRecommender
-                if self.strategy in ["vector", "hybrid"]:
+                if backend_strategy in ["vector", "hybrid"]:
                     # Create recommender with configured vector index path
                     recommender.index_path = self.vector_index_path
                     recommender.faiss_index = None

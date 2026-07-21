@@ -31,10 +31,15 @@ class RecommendationsTab(QWidget):
 
         # Strategy selector and controls
         control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("Algorithm Strategy:"))
+        control_layout.addWidget(QLabel("Recommendation Style:"))
 
         self.strategy_combo = QComboBox()
-        self.strategy_combo.addItems(["Vector", "Content", "Hybrid"])
+        self.strategy_combo.addItems([
+            "Automatic (Recommended)",
+            "Similar Vibe",
+            "Similar Sound",
+            "Balanced"
+        ])
         control_layout.addWidget(self.strategy_combo)
 
         self.rec_btn = QPushButton("Get Recommendations")
@@ -123,13 +128,16 @@ class RecommendationsTab(QWidget):
         from datetime import datetime
         import random
         from app.services.playlist import PlaylistService
+        from app.recommendations.selector import map_ui_to_backend_strategy
 
         source = self.playlist_source_combo.currentText()
-        strategy = self.strategy_combo.currentText()
+        strategy_ui = self.strategy_combo.currentText()
         filters = {}
         prompt_text = f"Generated from recommendations using source: {source}"
 
         with get_session() as session:
+            vector_path = self.main_window.settings_tab.get_vector_index_path()
+            strategy = map_ui_to_backend_strategy(strategy_ui, session, vector_path)
             if source == "Current Song":
                 song_id = self.main_window.current_song_id
                 if song_id is None:

@@ -44,6 +44,56 @@ class SearchService:
     """Consolidates text metadata matching, FAISS vector search, and semantic tag filter logic."""
 
     @staticmethod
+    def ranked_metadata_search(query: str, session: Session) -> list[dict]:
+        """Queries database and returns search results ranked by title/artist match priority."""
+        query_clean = query.strip().lower()
+        if not query_clean:
+            return []
+
+        term = f"%{query_clean}%"
+        songs = (
+            session.query(Song)
+            .filter(
+                Song.title.ilike(term)
+                | Song.artist.ilike(term)
+            )
+            .all()
+        )
+
+        def get_rank_key(s):
+            t = (s.title or "").lower().strip()
+            a = (s.artist or "").lower().strip()
+            
+            if t == query_clean:
+                rank = 1
+            elif t.startswith(query_clean):
+                rank = 2
+            elif query_clean in t:
+                rank = 3
+            elif a == query_clean:
+                rank = 4
+            elif query_clean in a:
+                rank = 5
+            else:
+                rank = 6
+            return rank, t
+
+        ranked_songs = sorted(songs, key=get_rank_key)
+
+        return [
+            {
+                "id": s.id,
+                "title": s.title,
+                "artist": s.artist,
+                "album": s.album,
+                "duration": s.duration,
+                "genre": s.original_genre,
+                "artwork_available": s.cover_art is not None,
+            }
+            for s in ranked_songs
+        ]
+
+    @staticmethod
     def metadata_search(query: str, session: Session) -> list[dict]:
         """Queries the database for matching title, artist, album, or genre substring."""
         term = f"%{query}%"

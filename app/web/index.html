@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MuseAI - Music Library</title>
+  <!-- Google Fonts Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- Main Application Wrapper -->
+  <div class="app-container">
+
+    <!-- 1. LEFT SIDEBAR -->
+    <aside class="sidebar-left">
+      <div class="brand">
+        <!-- Logo Icon -->
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2v20M17 5v14M7 9v6M22 10v4M2 10v4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">MuseAI</span>
+      </div>
+
+      <!-- Main Navigation -->
+      <nav class="nav-menu">
+        <button class="nav-item active" id="nav-home" data-target="view-home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+          <span>Home</span>
+        </button>
+        <button class="nav-item" id="nav-assistant" data-target="view-assistant">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>AI Assistant</span>
+        </button>
+        <button class="nav-item" id="nav-create" data-target="view-create">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          <span>Create Playlist</span>
+        </button>
+      </nav>
+
+      <!-- Library Categories -->
+      <div class="sidebar-section">
+        <h3 class="section-title">Library</h3>
+        <ul class="library-list">
+          <li class="library-item" id="lib-favorites">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+            <span class="lib-label">Favorites</span>
+            <span class="lib-count" id="count-favorites">0</span>
+          </li>
+          <li class="library-item" id="lib-recent">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span class="lib-label">Recently Played</span>
+            <span class="lib-count" id="count-recent">0</span>
+          </li>
+          <li class="library-item" id="lib-downloads">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            <span class="lib-label">Downloads</span>
+            <span class="lib-count" id="count-downloads">0</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Playlists Section -->
+      <div class="sidebar-section playlists-section">
+        <div class="section-header">
+          <h3 class="section-title">Playlists</h3>
+        </div>
+        <ul class="playlist-sidebar-list" id="sidebar-playlists">
+          <!-- Dynamic Playlists Load Here -->
+          <li class="playlist-loading-item">Loading playlists...</li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="resizer" id="resizer-left"></div>
+
+    <!-- 2. CENTER PANEL (MAIN DYNAMIC CONTENT) -->
+    <main class="center-content">
+
+      <!-- View: Home -->
+      <section class="content-view active" id="view-home">
+        <header class="home-header">
+          <h1 class="greeting">Good Evening, Hisham 👋</h1>
+          <p class="subtitle">Here's your music library</p>
+        </header>
+
+        <!-- Dynamic Home Page Sections -->
+        <section class="home-section" id="continue-listening-section" style="display:none; margin-bottom: 28px;">
+          <h2 class="section-heading">Continue Listening</h2>
+          <div class="continue-listening-grid" id="continue-listening-grid">
+            <!-- Dynamic Continue Listening cards render here -->
+          </div>
+        </section>
+
+        <section class="home-section" style="margin-bottom: 28px;">
+          <h2 class="section-heading">Recently Played</h2>
+          <div class="playlists-grid" id="recently-played-grid">
+            <!-- Dynamic Recently Played cards render here -->
+          </div>
+        </section>
+
+        <section class="home-section" style="margin-bottom: 28px;">
+          <h2 class="section-heading">Recently Added</h2>
+          <div class="playlists-grid" id="recently-added-grid">
+            <!-- Dynamic Recently Added cards render here -->
+          </div>
+        </section>
+
+        <!-- Library Filter & Search Row -->
+        <div class="filter-row">
+          <div class="search-box-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" class="search-input" id="library-search-input" placeholder="Search all songs...">
+          </div>
+
+          <div class="dropdown-filters">
+            <select class="filter-select" id="filter-genre">
+              <option value="">All Genres</option>
+            </select>
+            <select class="filter-select" id="filter-mood">
+              <option value="">All Moods</option>
+            </select>
+            <select class="filter-select" id="filter-time">
+              <option value="">All Time</option>
+            </select>
+            <button class="filter-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+                <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+                <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
+                <line x1="17" y1="16" x2="23" y2="16"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Songs Table -->
+        <div class="table-container">
+          <table class="songs-table" id="songs-table">
+            <thead>
+              <tr>
+                <th class="col-num">#</th>
+                <th class="col-heart"></th>
+                <th class="col-title">TITLE</th>
+                <th class="col-artist">ARTIST</th>
+                <th class="col-album">ALBUM</th>
+                <th class="col-duration">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="clock-icon">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </th>
+                <th class="col-options"></th>
+              </tr>
+            </thead>
+            <tbody id="songs-table-body">
+              <!-- Songs rows will be populated dynamically -->
+              <tr class="table-loading-row">
+                <td colspan="7">Loading your music library...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination-container">
+          <button class="pagination-btn" id="btn-prev-page" disabled>Previous</button>
+          <span class="pagination-info" id="pagination-info">Page 1 of 1</span>
+          <button class="pagination-btn" id="btn-next-page" disabled>Next</button>
+        </div>
+      </section>
+
+      <!-- View: AI Assistant -->
+      <section class="content-view" id="view-assistant">
+        <div class="assistant-container">
+          <!-- Assistant Header -->
+          <div class="assistant-header-row">
+            <div class="assistant-brand-info">
+              <div class="assistant-bot-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+                  <path d="M4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7z"/>
+                  <line x1="9" y1="14" x2="9" y2="14.01"/>
+                  <line x1="15" y1="14" x2="15" y2="14.01"/>
+                </svg>
+              </div>
+              <div>
+                <h1 class="view-title">AI Assistant</h1>
+                <p class="subtitle">Your personal music companion</p>
+              </div>
+            </div>
+            <button class="clear-chat-btn" id="btn-clear-chat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-right:6px;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              Clear Chat
+            </button>
+          </div>
+
+          <!-- Suggestion Chips Row -->
+          <div class="suggestion-chips-container">
+            <span class="chips-label">Try asking something like...</span>
+            <div class="chips-grid">
+              <button class="suggestion-chip" data-prompt="Songs for a rainy evening">
+                <span class="chip-emoji">🌧️</span>
+                <span class="chip-text">"Songs for a rainy evening"</span>
+              </button>
+              <button class="suggestion-chip" data-prompt="Focus music for studying">
+                <span class="chip-emoji">🧠</span>
+                <span class="chip-text">"Focus music for studying"</span>
+              </button>
+              <button class="suggestion-chip" data-prompt="Upbeat songs for a workout">
+                <span class="chip-emoji">👟</span>
+                <span class="chip-text">"Upbeat songs for a workout"</span>
+              </button>
+              <button class="suggestion-chip" data-prompt="Melancholic indie songs">
+                <span class="chip-emoji">💖</span>
+                <span class="chip-text">"Melancholic indie songs"</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Messages Container -->
+          <div class="chat-messages-scroll" id="chat-messages-container">
+            <!-- Messages render dynamically -->
+          </div>
+
+          <!-- Chat Input Bar -->
+          <div class="chat-input-wrapper">
+            <form class="chat-input-form" id="chat-prompt-form">
+              <input type="text" class="chat-input" id="chat-prompt-input" placeholder="Ask me anything about music..." autocomplete="off">
+              <button type="submit" class="chat-send-btn" id="btn-send-chat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </form>
+            <div class="chat-footer-examples">
+              <span>Examples: "happy songs" • "chill lofi beats" • "similar to The Weeknd" • "songs for driving at night"</span>
+              <span style="margin-left:auto;">Powered by MuseAI</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Create Playlist -->
+      <section class="content-view" id="view-create">
+        <header class="section-header-large">
+          <h1 class="view-title">Create Playlist</h1>
+          <p class="subtitle">Customize recommendation rules to generate customized mixes</p>
+        </header>
+        
+        <div class="playlist-generator-container">
+          <form class="playlist-form" id="playlist-generator-form">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="playlist-strategy" class="form-label">Recommendation Strategy</label>
+                <select class="form-select" id="playlist-strategy" required>
+                  <option value="automatic">Automatic (Recommended)</option>
+                  <option value="similar vibe">Similar Vibe</option>
+                  <option value="similar sound">Similar Sound</option>
+                  <option value="balanced">Balanced</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="playlist-seed-type" class="form-label">Seed Type</label>
+                <select class="form-select" id="playlist-seed-type" required>
+                  <option value="current song">Current Song</option>
+                  <option value="current queue">Current Queue</option>
+                  <option value="favourites">Favourites</option>
+                  <option value="song">Seed Song</option>
+                  <option value="mood">Mood Tag</option>
+                  <option value="activity">Activity Tag</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="playlist-seed-value" class="form-label">Seed Value</label>
+                <input type="text" class="form-input" id="playlist-seed-value" placeholder="Optional (resolves from history/favorites)">
+              </div>
+
+              <div class="form-group">
+                <label for="playlist-limit" class="form-label">Number of Songs</label>
+                <input type="number" class="form-input" id="playlist-limit" min="1" max="100" value="20" required>
+              </div>
+            </div>
+
+            <button type="submit" class="generate-btn" id="btn-generate-playlist">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; height:18px; margin-right:6px;"><path d="M12 5v14M5 12h14"/></svg>
+              Generate Playlist
+            </button>
+          </form>
+
+          <!-- Generated Playlist Table Result -->
+          <div class="generated-results-wrapper" id="generated-playlist-results" style="display: none;">
+            <div class="results-header-row">
+              <h3 class="results-heading">Generated Recommendation Mix</h3>
+              <div class="results-actions">
+                <input type="text" class="playlist-name-input" id="new-playlist-name" placeholder="Playlist Name" value="My Awesome Mix">
+                <button class="save-playlist-btn" id="btn-save-playlist">
+                  Save Playlist
+                </button>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table class="songs-table">
+                <thead>
+                  <tr>
+                    <th class="col-num">#</th>
+                    <th class="col-title">TITLE</th>
+                    <th class="col-artist">ARTIST</th>
+                    <th class="col-album">ALBUM</th>
+                    <th class="col-duration">DURATION</th>
+                  </tr>
+                </thead>
+                <tbody id="generated-songs-table-body">
+                  <!-- Generated songs will load here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+      <!-- View: Playlist Details -->
+      <section class="content-view" id="view-playlist-detail">
+        <div class="playlist-detail-container">
+          <!-- Back button -->
+          <button class="back-nav-btn" id="btn-playlist-back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"/>
+              <polyline points="12 19 5 12 12 5"/>
+            </svg>
+            <span>Back</span>
+          </button>
+
+          <!-- Hero Section -->
+          <div class="playlist-detail-hero">
+            <div class="playlist-cover-large-wrapper">
+              <img id="detail-playlist-cover" class="playlist-cover-large-img" src="" alt="Playlist Cover">
+            </div>
+            
+            <div class="playlist-hero-info">
+              <div class="playlist-badge-row">
+                <span class="badge-type" id="detail-playlist-badge">PLAYLIST</span>
+                <span class="badge-ai" id="detail-playlist-ai-badge" style="display:none;">AI MIX</span>
+              </div>
+              
+              <h1 class="playlist-hero-title" id="detail-playlist-title">Playlist Title</h1>
+              <p class="playlist-hero-desc" id="detail-playlist-desc"></p>
+              
+              <div class="playlist-hero-stats">
+                <span class="stat-highlight" id="detail-song-count">0 songs</span>
+                <span class="stat-divider">•</span>
+                <span id="detail-total-duration">0 min</span>
+                <span class="stat-divider">•</span>
+                <span id="detail-created-date">Created</span>
+                <span class="stat-divider">•</span>
+                <span id="detail-play-count">0 plays</span>
+              </div>
+
+              <!-- AI Generation Metadata Box -->
+              <div class="ai-meta-card" id="detail-ai-meta-box" style="display:none;">
+                <div class="ai-meta-title-row">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-right:6px;">
+                    <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
+                    <path d="M4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7z"/>
+                  </svg>
+                  <span>AI Generation Parameters</span>
+                </div>
+                <div class="ai-meta-items">
+                  <div class="ai-meta-row"><strong>Prompt:</strong> <span id="ai-meta-prompt">-</span></div>
+                  <div class="ai-meta-row"><strong>Strategy:</strong> <span id="ai-meta-strategy">-</span></div>
+                  <div class="ai-meta-row"><strong>Seed:</strong> <span id="ai-meta-seed">-</span></div>
+                  <div class="ai-meta-row"><strong>Engine:</strong> <span id="ai-meta-engine">Verse AI v1.0 (Local MIR)</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Controls / Action Row -->
+          <div class="playlist-detail-actions">
+            <button class="playlist-play-main-btn" id="btn-playlist-play-all">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <span>Play</span>
+            </button>
+
+            <button class="playlist-action-secondary-btn" id="btn-playlist-shuffle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
+                <polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
+                <line x1="4" y1="4" x2="9" y2="9"/>
+              </svg>
+              <span>Shuffle</span>
+            </button>
+
+            <button class="playlist-action-icon-btn" id="btn-playlist-delete" title="Delete Playlist">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Song Table -->
+          <div class="table-container">
+            <table class="songs-table" id="playlist-songs-table">
+              <thead>
+                <tr>
+                  <th class="col-num">#</th>
+                  <th class="col-heart"></th>
+                  <th class="col-title">TITLE</th>
+                  <th class="col-artist">ARTIST</th>
+                  <th class="col-album">ALBUM</th>
+                  <th class="col-duration">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="clock-icon">
+                      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                  </th>
+                  <th class="col-options"></th>
+                </tr>
+              </thead>
+              <tbody id="playlist-detail-songs-body">
+                <!-- Songs populate dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="resizer" id="resizer-right"></div>
+
+    <!-- 3. RIGHT PANEL (NOW PLAYING & DETAILED RECOMMENDATIONS) -->
+    <aside class="sidebar-right">
+      <div class="sidebar-default-view" id="sidebar-default-view">
+        <div class="panel-header">
+          <h2 class="panel-title">Now Playing</h2>
+          <button class="panel-options-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="now-playing-detail-card">
+          <div class="now-playing-large-art-wrapper">
+            <div class="now-playing-large-art-placeholder" id="np-large-art">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <path d="M9 18V5l12-2v13M9 9h12"/>
+                <circle cx="6" cy="18" r="3"/>
+                <circle cx="18" cy="16" r="3"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="now-playing-text-row">
+            <div class="now-playing-meta">
+              <h3 class="np-title" id="np-title">No Song Playing</h3>
+              <p class="np-artist" id="np-artist">Select a track from the library</p>
+            </div>
+            <button class="np-like-btn" id="np-like-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="playback-progress-section">
+            <input type="range" class="progress-bar-slider" id="np-progress-slider" min="0" max="100" value="0" disabled>
+            <div class="progress-time-labels">
+              <span class="time-label" id="np-time-current">0:00</span>
+              <span class="time-label" id="np-time-total">0:00</span>
+            </div>
+          </div>
+
+          <!-- Large Player controls on Right panel -->
+          <div class="np-playback-controls">
+            <button class="control-btn" id="np-btn-shuffle" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
+                <polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
+                <line x1="4" y1="4" x2="9" y2="9"/>
+              </svg>
+            </button>
+            <button class="control-btn" id="np-btn-prev" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
+              </svg>
+            </button>
+            <button class="control-btn play-circle-btn" id="np-btn-play" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor" id="np-play-icon"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="control-btn" id="np-btn-next" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>
+              </svg>
+            </button>
+            <button class="control-btn" id="np-btn-repeat" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="np-volume-section">
+            <button class="control-btn" id="np-btn-volume">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="np-volume-icon">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+            </button>
+            <input type="range" class="volume-slider" id="np-volume-slider" min="0" max="100" value="70">
+          </div>
+        </div>
+
+        <!-- Playing Next queue list -->
+        <div class="sidebar-section right-queue-section">
+          <h3 class="section-title">Playing Next</h3>
+          <ul class="queue-list" id="np-queue-list">
+            <li class="queue-empty-item">Queue is empty</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Assistant Created Playlist View inside Right Sidebar -->
+      <div class="assistant-created-playlist-view" id="assistant-created-playlist-view" style="display: none;">
+        <div class="panel-header" style="margin-bottom:16px;">
+          <h2 class="panel-title" style="font-size:12px; font-weight:700; letter-spacing:1px; color:#fff;">YOUR CREATED PLAYLIST</h2>
+          <button class="panel-close-btn" id="btn-close-assistant-sidebar" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px;">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="assistant-sidebar-card">
+          <div class="assistant-sidebar-hero">
+            <div class="assistant-sidebar-art" id="assistant-sidebar-art">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13M9 9h12"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+            <div class="assistant-sidebar-meta">
+              <h3 class="assistant-sidebar-title" id="assistant-sidebar-title">Rainy Evening Vibes 🌧️</h3>
+              <p class="assistant-sidebar-count" id="assistant-sidebar-count">20 songs • 1h 24m</p>
+              <p class="assistant-sidebar-desc" id="assistant-sidebar-desc">Calm, nostalgic and perfect for a rainy evening.</p>
+            </div>
+          </div>
+
+          <div class="assistant-sidebar-actions">
+            <button class="assistant-play-all-btn" id="btn-assistant-play-all">
+              <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px; height:14px; margin-right:4px;"><path d="M8 5v14l11-7z"/></svg>
+              Play All
+            </button>
+            <button class="assistant-options-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px;"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="assistant-sidebar-table-wrapper">
+          <table class="assistant-sidebar-songs-table">
+            <thead>
+              <tr>
+                <th style="width:24px;">#</th>
+                <th>TITLE</th>
+                <th>ARTIST</th>
+                <th style="width:36px; text-align:right;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></th>
+              </tr>
+            </thead>
+            <tbody id="assistant-sidebar-songs-body">
+              <!-- Tracks populate dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="assistant-sidebar-footer">
+          <div class="assistant-sidebar-pagination">
+            <button class="paging-arrow" disabled>&lt;</button>
+            <span class="paging-dot active"></span>
+            <span class="paging-dot"></span>
+            <span class="paging-dot"></span>
+            <span class="paging-dot"></span>
+            <button class="paging-arrow">&gt;</button>
+          </div>
+
+          <button class="assistant-sidebar-regen-btn" id="btn-sidebar-regen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; margin-right:6px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Regenerate Answer
+          </button>
+          <p class="assistant-sidebar-footer-sub">Not what you had in mind? Regenerate for a different vibe.</p>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+
+
+  <!-- HTML5 Audio Node (Hidden) -->
+  <audio id="main-audio-element" style="display:none;"></audio>
+
+  <!-- Search Overlay -->
+  <div class="search-overlay" id="search-overlay">
+    <div class="search-overlay-content">
+      <div class="search-overlay-input-row">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Search song title or artist..." autocomplete="off">
+        <span class="search-overlay-hint">Press <kbd>Esc</kbd> to close</span>
+      </div>
+      <div class="search-overlay-results" id="search-overlay-results">
+        <!-- Search result entries will populate dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="index.js"></script>
+</body>
+</html>

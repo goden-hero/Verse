@@ -61,18 +61,32 @@ class PlaylistService:
     @staticmethod
     def create_playlist(
         name: str,
-        prompt: str | None,
-        strategy: str | None,
-        generated_by: str,
-        session: Session,
+        prompt: str | None = None,
+        strategy: str | None = None,
+        generated_by: str = "MANUAL",
+        session: Session = None,
+        description: str | None = None,
+        seed_type: str | None = None,
+        seed_song_id: int | None = None,
+        generator_version: str | None = None,
+        llm_model: str | None = None,
+        created_from: str | None = None,
     ) -> int:
         """Creates a new playlist record in the database."""
+        now = datetime.utcnow()
         playlist = Playlist(
             name=name,
+            description=description,
             prompt=prompt,
             strategy=strategy,
+            seed_type=seed_type,
+            seed_song_id=seed_song_id,
             generated_by=generated_by,
-            created_at=datetime.utcnow(),
+            generator_version=generator_version,
+            llm_model=llm_model,
+            created_from=created_from,
+            created_at=now,
+            updated_at=now,
         )
         session.add(playlist)
         session.commit()
@@ -93,28 +107,136 @@ class PlaylistService:
                 position=pos,
             )
             session.add(ps)
+        
+        playlist = session.get(Playlist, playlist_id)
+        if playlist:
+            playlist.updated_at = datetime.utcnow()
+            
         session.commit()
+        
+        # Invalidate cover cache
+        from app.services.playlist_artwork import PlaylistArtworkService
+        PlaylistArtworkService.invalidate_cover(playlist_id)
+        
         logger.info("Added %d songs to playlist id %d", len(song_ids), playlist_id)
 
     @staticmethod
-    def get_playlists(session: Session) -> list[dict]:
-        """Retrieves metadata of all playlists."""
-        playlists = session.query(Playlist).order_by(Playlist.created_at.desc()).all()
+    def update_playlist(
+        playlist_id: int,
+        name: str | None = None,
+        description: str | None = None,
+        song_ids: list[int] | None = None,
+        session: Session = None,
+    ) -> bool:
+        """Updates name, description, and song list of a playlist."""
+        playlist = session.get(Playlist, playlist_id)
+        if not playlist:
+            return False
+
+        if name is not None:
+            playlist.name = name.strip()
+        if description is not None:
+            playlist.description = description.strip()
+
+        playlist.updated_at = datetime.utcnow()
+        session.commit()
+
+        if song_ids is not None:
+            PlaylistService.add_songs_to_playlist(playlist_id, song_ids, session)
+
+        return True
+
+    @staticmethod
+    def get_playlists(
+        session: Session,
+        section: str = "all",
+        limit: int = 50,
+    ) -> list[dict]:
+        """Retrieves metadata of playlists with optional section filtering."""
+        if section == "recently_played":
+            from app.services.playback_session import PlaybackSessionService
+            return PlaybackSessionService.get_recently_played_playlists(limit=limit, session=session)
+
+        query = session.query(Playlist)
+        if section == "recently_added":
+            query = query.order_by(Playlist.created_at.desc())
+        else: # default/all
+            query = query.order_by(Playlist.updated_at.desc())
+
+        playlists = query.limit(limit).all()
         results = []
+        from app.services.playback_session import PlaybackSessionService
         for p in playlists:
             songs_count = len(p.songs)
             total_duration = sum((ps.song.duration or 0.0) for ps in p.songs)
+            stats = PlaybackSessionService.get_playlist_stats(p.id, session)
             results.append({
                 "id": p.id,
                 "name": p.name,
+                "description": p.description,
                 "created_at": p.created_at.isoformat(),
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 "prompt": p.prompt,
                 "strategy": p.strategy,
+                "seed_type": p.seed_type,
                 "generated_by": p.generated_by,
+                "generator_version": p.generator_version,
+                "llm_model": p.llm_model,
+                "created_from": p.created_from,
                 "songs_count": songs_count,
                 "total_duration": total_duration,
+                "play_count": stats["play_count"],
+                "last_played_at": stats["last_played_at"],
             })
         return results
+
+    @staticmethod
+    def get_playlist_details(playlist_id: int, session: Session) -> dict | None:
+        """Retrieves complete details of a single playlist including AI metadata and song list."""
+        playlist = session.get(Playlist, playlist_id)
+        if not playlist:
+            return None
+
+        from app.services.playback_session import PlaybackSessionService
+        stats = PlaybackSessionService.get_playlist_stats(playlist_id, session)
+        songs_count = len(playlist.songs)
+        total_duration = sum((ps.song.duration or 0.0) for ps in playlist.songs)
+
+        seed_song_title = playlist.seed_song.title if playlist.seed_song else None
+
+        return {
+            "id": playlist.id,
+            "name": playlist.name,
+            "description": playlist.description,
+            "created_at": playlist.created_at.isoformat(),
+            "updated_at": playlist.updated_at.isoformat() if playlist.updated_at else None,
+            "prompt": playlist.prompt,
+            "strategy": playlist.strategy,
+            "seed_type": playlist.seed_type,
+            "seed_song_id": playlist.seed_song_id,
+            "seed_song_title": seed_song_title,
+            "generated_by": playlist.generated_by,
+            "generator_version": playlist.generator_version,
+            "llm_model": playlist.llm_model,
+            "created_from": playlist.created_from,
+            "songs_count": songs_count,
+            "total_duration": total_duration,
+            "play_count": stats["play_count"],
+            "last_played_at": stats["last_played_at"],
+            "songs": [
+                {
+                    "id": ps.song.id,
+                    "title": ps.song.title,
+                    "artist": ps.song.artist,
+                    "album": ps.song.album,
+                    "duration": ps.song.duration,
+                    "genre": ps.song.original_genre or "Unknown",
+                    "position": ps.position,
+                    "artwork_available": ps.song.cover_art is not None,
+                }
+                for ps in playlist.songs if ps.song
+            ]
+        }
 
     @staticmethod
     def get_playlist_songs(playlist_id: int, session: Session) -> list[dict]:
@@ -126,14 +248,15 @@ class PlaylistService:
         results = []
         for ps in playlist.songs:
             s = ps.song
-            results.append({
-                "id": s.id,
-                "title": s.title,
-                "artist": s.artist,
-                "album": s.album,
-                "duration": s.duration,
-                "position": ps.position,
-            })
+            if s:
+                results.append({
+                    "id": s.id,
+                    "title": s.title,
+                    "artist": s.artist,
+                    "album": s.album,
+                    "duration": s.duration,
+                    "position": ps.position,
+                })
         return results
 
     @staticmethod
@@ -143,16 +266,121 @@ class PlaylistService:
         if playlist:
             session.delete(playlist)
             session.commit()
+            from app.services.playlist_artwork import PlaylistArtworkService
+            PlaylistArtworkService.invalidate_cover(playlist_id)
             logger.info("Deleted playlist id %d", playlist_id)
 
     @staticmethod
     def rename_playlist(playlist_id: int, new_name: str, session: Session) -> None:
         """Renames a playlist."""
-        playlist = session.get(Playlist, playlist_id)
-        if playlist:
-            playlist.name = new_name
-            session.commit()
-            logger.info("Renamed playlist id %d to '%s'", playlist_id, new_name)
+        PlaylistService.update_playlist(playlist_id, name=new_name, session=session)
+
+    @staticmethod
+    def generate_playlist_preview(
+        strategy: str,
+        filters: dict,
+        target_length: int,
+        session: Session,
+    ) -> list[dict]:
+        """Generates list of recommended songs based on rules without persisting to database."""
+        candidate_ids = []
+
+        moods = filters.get("moods", [])
+        activities = filters.get("activities", [])
+        energy_min = filters.get("energy_min")
+        energy_max = filters.get("energy_max")
+        seed_song_title = filters.get("seed_song_title")
+
+        if moods or activities or (energy_min is not None) or (energy_max is not None):
+            semantic_matches = SearchService.semantic_search(
+                moods=moods,
+                activities=activities,
+                energy_min=energy_min,
+                energy_max=energy_max,
+                session=session,
+            )
+            candidate_ids.extend([s["id"] for s in semantic_matches])
+
+        if seed_song_title:
+            seed_song = session.query(Song).filter(Song.title.ilike(f"%{seed_song_title}%")).first()
+            if not seed_song:
+                seed_song = session.query(Song).filter(Song.title.like(f"%{seed_song_title}%")).first()
+            if seed_song:
+                candidate_ids.append(seed_song.id)
+                try:
+                    recs = RecommendationService.recommend(
+                        song_id=seed_song.id,
+                        strategy=strategy or "hybrid",
+                        limit=target_length * 2,
+                        session=session,
+                    )
+                    filtered_recs = [
+                        r["id"] for r in recs
+                        if _song_matches_semantic(r["id"], moods, activities, energy_min, energy_max, session)
+                    ]
+                    candidate_ids.extend(filtered_recs)
+                except Exception as e:
+                    logger.warning("Failed to fetch recommendations for seed: %s", e)
+
+        seen = set()
+        unique_candidates = []
+        for cid in candidate_ids:
+            if cid not in seen:
+                seen.add(cid)
+                unique_candidates.append(cid)
+
+        if len(unique_candidates) < 5:
+            logger.info("Fewer than 5 candidates found. Relaxing semantic constraints...")
+
+            if (energy_min is not None) or (energy_max is not None):
+                logger.info("Relaxing constraints: Dropping energy filters.")
+                matches = SearchService.semantic_search(moods=moods, activities=activities, session=session)
+                for s in matches:
+                    if s["id"] not in seen:
+                        seen.add(s["id"])
+                        unique_candidates.append(s["id"])
+
+            if len(unique_candidates) < 5 and activities:
+                logger.info("Relaxing constraints: Dropping activities filters.")
+                matches = SearchService.semantic_search(moods=moods, energy_min=energy_min, energy_max=energy_max, session=session)
+                for s in matches:
+                    if s["id"] not in seen:
+                        seen.add(s["id"])
+                        unique_candidates.append(s["id"])
+
+            if len(unique_candidates) < 5 and activities and ((energy_min is not None) or (energy_max is not None)):
+                logger.info("Relaxing constraints: Dropping both activities and energy filters.")
+                matches = SearchService.semantic_search(moods=moods, session=session)
+                for s in matches:
+                    if s["id"] not in seen:
+                        seen.add(s["id"])
+                        unique_candidates.append(s["id"])
+
+            if len(unique_candidates) < 5:
+                logger.warning("Still fewer than 5 candidates. Padding with random library songs.")
+                all_songs = session.query(Song).all()
+                random.shuffle(all_songs)
+                for s in all_songs:
+                    if s.id not in seen:
+                        seen.add(s.id)
+                        unique_candidates.append(s.id)
+
+        final_song_ids = unique_candidates[:target_length]
+
+        results = []
+        for song_id in final_song_ids:
+            song = session.get(Song, song_id)
+            if song:
+                results.append({
+                    "id": song.id,
+                    "title": song.title,
+                    "artist": song.artist,
+                    "album": song.album,
+                    "duration": song.duration,
+                    "genre": song.original_genre,
+                    "artwork_available": song.cover_art is not None,
+                })
+        return results
 
     @staticmethod
     def generate_playlist(

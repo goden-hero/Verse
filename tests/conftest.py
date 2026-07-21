@@ -39,10 +39,14 @@ def mock_music_library(tmp_path: Path) -> Path:
 def db_engine():
     """Creates a temporary in-memory database engine for tests."""
     from sqlalchemy import create_engine, event
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.pool import StaticPool
     from app.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
 
     # Enforce foreign keys in SQLite
     @event.listens_for(engine, "connect")
