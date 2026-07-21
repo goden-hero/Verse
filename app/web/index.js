@@ -1602,6 +1602,41 @@ async function sendAssistantPrompt(promptText) {
   }
 }
 
+async function savePlaylistPreview(playlist, button) {
+  const songIds = (playlist.songs || []).map(song => song.id).filter(Boolean);
+  if (songIds.length === 0) {
+    alert('This playlist has no songs to save.');
+    return;
+  }
+
+  const playlistName = window.prompt('Save playlist as:', playlist.name);
+  if (!playlistName || !playlistName.trim()) return;
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  try {
+    const response = await fetch('/api/v1/playlists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: playlistName.trim(), song_ids: songIds })
+    });
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.detail || `Save failed (${response.status})`);
+    }
+
+    button.textContent = 'Saved';
+    loadPlaylists();
+    loadRecentlyAddedSection();
+  } catch (err) {
+    console.error('Failed to save playlist preview:', err);
+    alert(`Failed to save playlist: ${err.message}`);
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
 function renderAssistantSidebarPlaylist(playlist) {
   if (!playlist) return;
   currentAssistantPlaylist = playlist;
@@ -1661,6 +1696,11 @@ function renderAssistantSidebarPlaylist(playlist) {
         playSong(playlist.songs[0], playlist.songs);
       }
     };
+  }
+
+  const btnSave = document.getElementById('btn-save-assistant-playlist');
+  if (btnSave) {
+    btnSave.onclick = () => savePlaylistPreview(playlist, btnSave);
   }
 
   const btnClose = document.getElementById('btn-close-assistant-sidebar');
@@ -1745,6 +1785,9 @@ function renderChatMessages() {
                 <svg viewBox="0 0 24 24" fill="currentColor" style="width:12px; height:12px;"><path d="M8 5v14l11-7z"/></svg>
                 Play Playlist
               </button>
+              <button class="chat-playlist-btn chat-save-playlist-btn" data-chat-save-idx="${idx}">
+                Save Playlist
+              </button>
             </div>
           </div>
         `;
@@ -1788,6 +1831,15 @@ function renderChatMessages() {
       if (item && item.playlist && item.playlist.songs) {
         playSong(item.playlist.songs[0], item.playlist.songs);
       }
+    });
+  });
+
+  const saveBtns = container.querySelectorAll('.chat-save-playlist-btn');
+  saveBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-chat-save-idx'));
+      const item = chatSessionHistory[idx];
+      if (item?.playlist) savePlaylistPreview(item.playlist, btn);
     });
   });
 

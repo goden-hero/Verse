@@ -1982,6 +1982,26 @@ button {
   transform: translateY(-1px);
 }
 
+.assistant-save-playlist-btn {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assistant-save-playlist-btn:hover:not(:disabled) {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.assistant-save-playlist-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .assistant-options-btn {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-color);
@@ -2488,5 +2508,4 @@ button {
   border-color: rgba(239, 68, 68, 0.4);
   background: rgba(239, 68, 68, 0.1);
 }
-
 
