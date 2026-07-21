@@ -25,6 +25,12 @@ def set_sqlite_pragma(dbapi_connection, connection_record) -> None:
         cursor.close()
 
 
+# Ensure SQLite parent directory exists before connecting
+if settings.database_url.startswith("sqlite:///"):
+    raw_db_path = settings.database_url.replace("sqlite:///", "")
+    if raw_db_path and raw_db_path != ":memory:":
+        Path(raw_db_path).parent.mkdir(parents=True, exist_ok=True)
+
 # Resolve database engine
 engine = create_engine(
     settings.database_url,

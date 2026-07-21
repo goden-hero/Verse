@@ -15,12 +15,18 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
-# for 'autogenerate' support
+from pathlib import Path
 from app.config.settings import settings
 from app.database.models import Base
 target_metadata = Base.metadata
 
 config.set_main_option("sqlalchemy.url", settings.database_url)
+
+# Ensure parent directory for SQLite database exists
+if settings.database_url.startswith("sqlite:///"):
+    raw_db_path = settings.database_url.replace("sqlite:///", "")
+    if raw_db_path and raw_db_path != ":memory:":
+        Path(raw_db_path).parent.mkdir(parents=True, exist_ok=True)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
