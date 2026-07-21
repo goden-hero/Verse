@@ -118,7 +118,7 @@ graph TD
 - **Ollama:** Make sure Ollama is installed and running locally to support the natural language AI Assistant and semantic indexing.
   ```bash
   # Start Ollama and download a lightweight model
-  ollama pull qwen3:4b
+  ollama pull mistral
   ```
 
 ### 2. Installation
@@ -140,7 +140,7 @@ DATABASE_URL=sqlite:///data/music_rec.db
 
 # Ollama parameters
 OLLAMA_URL=http://localhost:11434/api/generate
-OLLAMA_MODEL=qwen3:4b
+OLLAMA_MODEL=mistral
 OLLAMA_READ_TIMEOUT=120.0
 
 # Supported formats (comma separated)

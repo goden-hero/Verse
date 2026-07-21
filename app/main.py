@@ -3,6 +3,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 from sqlalchemy.orm import Session
 from app.config.settings import settings
 from app.database.connection import get_session
@@ -12,6 +13,45 @@ from app.history import get_history, record_play, record_skip, set_like_status
 from app.utils.logging import setup_logging
 
 logger = logging.getLogger("music_rec.main")
+
+
+def _default_vector_index_path() -> Path:
+    """Place the vector index beside the configured SQLite database."""
+    sqlite_prefix = "sqlite:///"
+    if settings.database_url.startswith(sqlite_prefix):
+        return Path(settings.database_url.removeprefix(sqlite_prefix)).parent / "vector_index.bin"
+    return Path("data") / "vector_index.bin"
+
+
+def run_scan(args) -> None:
+    """CLI handler for scanning and indexing a music folder."""
+    folder = Path(args.folder).expanduser()
+    if not folder.is_dir():
+        print(f"Scan failed: '{folder}' is not a directory.")
+        return
+
+    # Keep the full indexing behaviour shared with the desktop UI: metadata,
+    # features, embeddings, and both search indexes are refreshed together.
+    from app.ui.workers import ScanWorker
+
+    resolved_folder = folder.resolve()
+    worker = ScanWorker(
+        folder_path=resolved_folder,
+        vector_index_path=_default_vector_index_path(),
+    )
+    result: dict[str, int | str | None] = {"count": None, "error": None}
+    worker.finished.connect(lambda count: result.update(count=count))
+    worker.error.connect(lambda message: result.update(error=message))
+
+    print(f"Scanning and indexing music in '{resolved_folder}'...")
+    worker.run()
+
+    if result["error"]:
+        print(f"Scan failed: {result['error']}")
+    elif result["count"] is None:
+        print("Scan finished without a result.")
+    else:
+        print(f"Scan complete. Indexed {result['count']} new or updated song(s).")
 
 
 def run_enrich_semantic(args) -> None:
@@ -130,6 +170,16 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
 
+    # scan subcommand
+    scan_parser = subparsers.add_parser(
+        "scan",
+        help="Recursively scan and index a music folder.",
+    )
+    scan_parser.add_argument(
+        "folder",
+        help="Path to the music folder to scan.",
+    )
+
     # enrich-semantic subcommand
     enrich_parser = subparsers.add_parser(
         "enrich-semantic",
@@ -201,7 +251,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "enrich-semantic":
+    if args.command == "scan":
+        run_scan(args)
+    elif args.command == "enrich-semantic":
         run_enrich_semantic(args)
     elif args.command == "play":
         run_play(args)

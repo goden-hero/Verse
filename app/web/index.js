@@ -599,7 +599,10 @@ async function handleSavePlaylist() {
     
     elements.btnSavePlaylist.disabled = false;
     
-    if (!response.ok) throw new Error('Save failed');
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.detail || `Save failed (${response.status})`);
+    }
     
     alert(`Playlist "${playlistName}" saved successfully!`);
     
@@ -612,7 +615,7 @@ async function handleSavePlaylist() {
     loadPlaylists();
   } catch (err) {
     console.error(err);
-    alert('Failed to save playlist.');
+    alert(`Failed to save playlist: ${err.message}`);
     elements.btnSavePlaylist.disabled = false;
   }
 }

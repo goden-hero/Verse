@@ -15,6 +15,7 @@ from app.api.schemas import (
     PlaybackSessionResponse,
     ContinueListeningResponse,
 )
+from app.database.models import Song
 from app.services.playlist import PlaylistService
 from app.services.playback_session import PlaybackSessionService
 from app.services.playlist_artwork import PlaylistArtworkService
@@ -142,21 +143,40 @@ def create_playlist(
             detail="Playlist name cannot be empty."
         )
 
+    # The generated preview should already contain valid, distinct songs, but
+    # validating here prevents a foreign-key failure from leaving a playlist
+    # record behind without any tracks.
+    song_ids = list(dict.fromkeys(payload.song_ids))
+    found_song_ids = {
+        song_id
+        for (song_id,) in db.query(Song.id).filter(Song.id.in_(song_ids)).all()
+    }
+    missing_song_ids = [song_id for song_id in song_ids if song_id not in found_song_ids]
+    if missing_song_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"One or more songs no longer exist: {missing_song_ids}.",
+        )
+
     try:
         playlist_id = PlaylistService.create_playlist(
             name=payload.name.strip(),
             prompt=None,
             strategy="custom",
             generated_by="User",
-            session=db
+            session=db,
+            commit=False,
         )
         PlaylistService.add_songs_to_playlist(
             playlist_id=playlist_id,
-            song_ids=payload.song_ids,
-            session=db
+            song_ids=song_ids,
+            session=db,
+            commit=False,
         )
+        db.commit()
         return {"id": playlist_id, "name": payload.name, "message": "Playlist saved successfully."}
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save playlist: {str(e)}"

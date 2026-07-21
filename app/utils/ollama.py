@@ -33,7 +33,7 @@ def resolve_ollama_model(api_url: str, configured_model: str) -> str:
             if configured_model in installed_models:
                 return configured_model
 
-            # 2. Tag-less base match (e.g. "llama3" matches "llama3:latest" or vice versa)
+            # 2. Tag-less base match (e.g. "mistral" matches "mistral:latest" or vice versa)
             configured_clean = configured_model.split(":")[0].lower()
             for model_name in installed_models:
                 if model_name.split(":")[0].lower() == configured_clean:

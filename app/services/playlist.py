@@ -71,6 +71,7 @@ class PlaylistService:
         generator_version: str | None = None,
         llm_model: str | None = None,
         created_from: str | None = None,
+        commit: bool = True,
     ) -> int:
         """Creates a new playlist record in the database."""
         now = datetime.utcnow()
@@ -89,12 +90,19 @@ class PlaylistService:
             updated_at=now,
         )
         session.add(playlist)
-        session.commit()
+        session.flush()
+        if commit:
+            session.commit()
         logger.info("Created playlist: %s (id: %s)", name, playlist.id)
         return playlist.id
 
     @staticmethod
-    def add_songs_to_playlist(playlist_id: int, song_ids: list[int], session: Session) -> None:
+    def add_songs_to_playlist(
+        playlist_id: int,
+        song_ids: list[int],
+        session: Session,
+        commit: bool = True,
+    ) -> None:
         """Appends a list of song IDs to the playlist with positional ordering."""
         # Clear existing songs if any
         session.query(PlaylistSong).filter_by(playlist_id=playlist_id).delete()
@@ -112,7 +120,8 @@ class PlaylistService:
         if playlist:
             playlist.updated_at = datetime.utcnow()
             
-        session.commit()
+        if commit:
+            session.commit()
         
         # Invalidate cover cache
         from app.services.playlist_artwork import PlaylistArtworkService

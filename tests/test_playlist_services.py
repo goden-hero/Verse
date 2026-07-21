@@ -133,7 +133,7 @@ def test_playlist_extended_metadata(db_session: Session):
         seed_type="mood",
         generated_by="AI",
         generator_version="Verse AI v1.0",
-        llm_model="Ollama Llama3",
+        llm_model="Ollama Mistral",
         created_from="AI Assistant",
         description="Late night ambient coding tunes",
         session=db_session,
@@ -148,5 +148,5 @@ def test_playlist_extended_metadata(db_session: Session):
     assert details["seed_type"] == "mood"
     assert details["generated_by"] == "AI"
     assert details["generator_version"] == "Verse AI v1.0"
-    assert details["llm_model"] == "Ollama Llama3"
+    assert details["llm_model"] == "Ollama Mistral"
     assert details["created_from"] == "AI Assistant"

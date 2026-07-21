@@ -58,7 +58,7 @@ class Settings:
 
     # Ollama model name
     ollama_model: str = field(
-        default_factory=lambda: os.getenv("OLLAMA_MODEL", "llama3")
+        default_factory=lambda: os.getenv("OLLAMA_MODEL", "mistral")
     )
 
     # Ollama timeouts

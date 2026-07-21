@@ -33,10 +33,16 @@ def get_real_ollama_info():
 # 1. Ollama Integration (OllamaClient) Tests
 # =====================================================================
 
+def test_settings_default_to_mistral():
+    """Verify Mistral is the default Ollama model when none is configured."""
+    with patch.dict(os.environ, {}, clear=True):
+        assert Settings().ollama_model == "mistral"
+
+
 def test_ollama_client_payload_json_format():
     """Verify that the request payload to Ollama specifies "format": "json"."""
-    with patch("app.metadata.semantic.resolve_ollama_model", return_value="llama3"):
-        client = OllamaClient(api_url="http://localhost:11434/api/generate", model="llama3")
+    with patch("app.metadata.semantic.resolve_ollama_model", return_value="mistral"):
+        client = OllamaClient(api_url="http://localhost:11434/api/generate", model="mistral")
     
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -59,7 +65,7 @@ def test_ollama_client_payload_json_format():
         call_kwargs = mock_post.call_args[1]
         assert "json" in call_kwargs
         assert call_kwargs["json"]["format"] == "json"
-        assert call_kwargs["json"]["model"] == "llama3"
+        assert call_kwargs["json"]["model"] == "mistral"
 
 
 def test_ollama_client_prompt_context_injection():
@@ -425,5 +431,3 @@ def test_run_enrich_semantic_cli_handling_real(db_session: Session, mock_db_song
             tag_record = db_session.get(SemanticTags, mock_db_song.id)
             assert tag_record is not None
             assert isinstance(json.loads(tag_record.moods), list)
-
-
