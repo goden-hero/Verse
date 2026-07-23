@@ -164,8 +164,21 @@ The application can be driven via command-line arguments or using the Desktop GU
 python -m app.main gui
 ```
 
-### Command-Line Interface (CLI) Commands
+- **View or set the project LLM model:**
+  ```bash
+  # Check current LLM model and local Ollama status
+  python -m app.main get-model
 
+  # Change and persist the LLM model for the entire project
+  python -m app.main set-model llama3
+
+  # Alternative config syntax
+  python -m app.main config set-model llama3:latest
+  ```
+- **Override model for a single CLI command:**
+  ```bash
+  python -m app.main --model llama3 enrich-semantic
+  ```
 - **Enrich song metadata semantics:**
   ```bash
   python -m app.main enrich-semantic [--force] [--limit <count>]
@@ -183,6 +196,7 @@ python -m app.main gui
   ```bash
   python -m app.main show-history <song_id>
   ```
+
 
 ---
 

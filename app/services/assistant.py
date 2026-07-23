@@ -84,16 +84,20 @@ class AssistantService:
             action_type = action_item.action
             try:
                 out_songs = []
+                preview_details = None
 
                 if action_type == "generate_playlist":
                     main_playlist_title = action_item.playlist_name or main_playlist_title
                     strategy_mapped = action_item.strategy or "hybrid"
-                    out_songs = PlaylistService.generate_playlist_preview(
+                    req_len = action_item.target_length or 20
+                    preview_details = PlaylistService.generate_playlist_preview_details(
                         strategy=strategy_mapped,
                         filters=action_item.filters or {},
-                        target_length=action_item.target_length or 20,
+                        target_length=req_len,
                         session=session,
+                        name=main_playlist_title,
                     )
+                    out_songs = preview_details["songs"]
                 elif action_type == "semantic_search":
                     matches = SearchService.semantic_search(
                         moods=action_item.moods,
@@ -123,28 +127,35 @@ class AssistantService:
                     "error": None
                 })
 
-                if out_songs and not playlist_preview:
-                    # Map songs to standard dict format
-                    detailed_songs = []
-                    for s in out_songs:
-                        detailed_songs.append({
-                            "id": s["id"],
-                            "title": s.get("title", "Unknown"),
-                            "artist": s.get("artist", "Unknown"),
-                            "album": s.get("album", "Unknown"),
-                            "duration": s.get("duration", 0.0),
-                            "genre": s.get("original_genre") or s.get("genre") or "Unknown",
-                            "artwork_available": s.get("artwork_available", False)
-                        })
+                if not playlist_preview:
+                    if preview_details:
+                        playlist_preview = preview_details
+                    elif out_songs:
+                        detailed_songs = []
+                        for s in out_songs:
+                            detailed_songs.append({
+                                "id": s["id"],
+                                "title": s.get("title", "Unknown"),
+                                "artist": s.get("artist", "Unknown"),
+                                "album": s.get("album", "Unknown"),
+                                "duration": s.get("duration", 0.0),
+                                "genre": s.get("original_genre") or s.get("genre") or "Unknown",
+                                "artwork_available": s.get("artwork_available", False)
+                            })
 
-                    total_dur = sum((s.get("duration") or 0.0) for s in detailed_songs)
-                    playlist_preview = {
-                        "name": main_playlist_title,
-                        "songs_count": len(detailed_songs),
-                        "total_duration": total_dur,
-                        "strategy": action_type,
-                        "songs": detailed_songs
-                    }
+                        total_dur = sum((s.get("duration") or 0.0) for s in detailed_songs)
+                        playlist_preview = {
+                            "name": main_playlist_title,
+                            "songs_count": len(detailed_songs),
+                            "total_duration": total_dur,
+                            "strategy": action_type,
+                            "requested_length": None,
+                            "found_length": len(detailed_songs),
+                            "shortfall_reason": None,
+                            "feedback_message": None,
+                            "songs": detailed_songs
+                        }
+
 
             except Exception as step_err:
                 logger.error("Failed executing assistant step %s: %s", action_type, step_err)
@@ -157,10 +168,13 @@ class AssistantService:
 
         # 4. Construct natural conversational message response
         if playlist_preview:
-            msg_text = (
-                f"Perfect choice! I've created a playlist with {playlist_preview['songs_count']} tracks "
-                f"that capture the vibe of your request. Here's your playlist:"
-            )
+            if playlist_preview.get("feedback_message"):
+                msg_text = f"{playlist_preview['feedback_message']} Here's your playlist:"
+            else:
+                msg_text = (
+                    f"Perfect choice! I've created a playlist with {playlist_preview['songs_count']} tracks "
+                    f"that capture the vibe of your request. Here's your playlist:"
+                )
         else:
             msg_text = f"I executed your request for '{clean_msg}'."
 
@@ -170,6 +184,7 @@ class AssistantService:
             "steps": steps_out,
             "playlist": playlist_preview
         }
+
 
     @staticmethod
     def regenerate_playlist(playlist_id: int, session: Session) -> dict:

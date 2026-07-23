@@ -76,6 +76,10 @@ class PlaylistPreviewResponse(BaseModel):
     songs_count: int
     total_duration: float
     strategy: Optional[str] = None
+    requested_length: Optional[int] = None
+    found_length: Optional[int] = None
+    shortfall_reason: Optional[str] = None
+    feedback_message: Optional[str] = None
     songs: List[SongResponse]
 
 class PlaylistUpdateRequest(BaseModel):
@@ -111,7 +115,12 @@ class PlaylistDetailResponse(BaseModel):
     created_from: Optional[str] = None
     play_count: int
     last_played_at: Optional[str] = None
+    requested_length: Optional[int] = None
+    found_length: Optional[int] = None
+    shortfall_reason: Optional[str] = None
+    feedback_message: Optional[str] = None
     songs: List[SongResponse]
+
 
 class PlaySessionStartRequest(BaseModel):
     """Pydantic model representing request to start or resume a playlist playback session."""

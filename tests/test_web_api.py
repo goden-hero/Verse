@@ -220,9 +220,16 @@ def test_generate_playlist_preview_endpoint(api_client, db_session):
 
 def test_assistant_chat_structured_response(api_client, db_session, monkeypatch):
     """Tests POST /api/v1/assistant/chat returning structured JSON with playlist preview."""
+    import json
+    from app.database.models import SemanticTags
     song = Song(path="/rain.mp3", hash="hr", title="Rainy Days", artist="Chill Artist", duration=180.0)
     db_session.add(song)
     db_session.commit()
+
+    tag = SemanticTags(song_id=song.id, moods=json.dumps(["calm"]), energy="low")
+    db_session.add(tag)
+    db_session.commit()
+
 
     # Mock LLMParser to simulate intent parsing without needing a running Ollama server
     from app.assistant import LLMParser

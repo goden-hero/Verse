@@ -232,6 +232,9 @@ def test_executor_song_not_found(db_session):
     assert "Song not found" in res["steps"][0]["error"]
 
 
+from app.services.assistant import AssistantService
+
+
 def test_executor_generate_playlist_success(db_session):
     """Verify Executor successfully generates and persists playlists."""
     # Seed a song in DB first
@@ -264,3 +267,38 @@ def test_executor_generate_playlist_success(db_session):
     assert res["steps"][0]["status"] == "success"
     playlist_id = res["steps"][0]["output"]["id"]
     assert playlist_id is not None
+
+
+def test_assistant_service_process_chat_exposes_shortfall_message(db_session):
+    """Phase 8: Verify AssistantService.process_chat includes shortfall message when matches < requested length."""
+    s1 = Song(title="Chill Track", artist="Artist A", album="Album A", duration=180.0, path="/path/ch.mp3", hash="ch1")
+    db_session.add(s1)
+    db_session.commit()
+
+    from app.database.models import SemanticTags
+    import json
+    t1 = SemanticTags(song_id=s1.id, moods=json.dumps(["chill"]), energy="low")
+    db_session.add(t1)
+    db_session.commit()
+
+    mock_plan = {
+        "plan": [
+            {
+                "action": "generate_playlist",
+                "playlist_name": "Chill Mix",
+                "strategy": "hybrid",
+                "filters": {"moods": ["chill"]},
+                "target_length": 25,
+            }
+        ]
+    }
+
+    with patch("app.assistant.parser.LLMParser.parse_intent", return_value=mock_plan):
+        res = AssistantService.process_chat("Create a chill mix", db_session)
+
+    assert res["success"] is True
+    assert res["playlist"] is not None
+    assert res["playlist"]["requested_length"] == 25
+    assert res["playlist"]["found_length"] == 1
+    assert "Found 1 high-quality match(es) matching your request (requested 25)." in res["message"]
+

@@ -6,7 +6,15 @@ from sqlalchemy.orm import Session
 from app.database.models import Song, SemanticTags, Playlist, PlaylistSong
 from app.metadata.semantic import OllamaClient
 from app.services.search import SearchService, SYNONYMS
-from app.services.playlist import PlaylistService, _song_matches_semantic
+from app.services.playlist import (
+    PlaylistCandidate,
+    PlaylistService,
+    _apply_confidence_threshold,
+    _construct_playlist_candidates,
+    _rank_candidates,
+    _score_candidate_confidence,
+    _song_matches_semantic,
+)
 
 
 def test_regex_json_repair_success() -> None:
@@ -123,12 +131,13 @@ def test_playlist_generator_post_filters_recommendations(db_session: Session) ->
         assert rec2.id not in song_ids
 
 
-def test_playlist_generator_relaxation_fallback(db_session: Session) -> None:
-    """Verifies that step-down relaxation handles empty pools without immediate random padding."""
+def test_sparse_semantic_matches_return_short_playlist(db_session: Session) -> None:
+    """Verifies sparse strong matches are returned without relaxed or random padding."""
     # 1. Create songs
     s1 = Song(path="/path/rel1.mp3", hash="rel1", title="Calm Song", artist="Artist A", duration=180.0)
     s2 = Song(path="/path/rel2.mp3", hash="rel2", title="Chill Song", artist="Artist B", duration=180.0)
-    db_session.add_all([s1, s2])
+    s3 = Song(path="/path/rel3.mp3", hash="rel3", title="Random Song", artist="Artist C", duration=180.0)
+    db_session.add_all([s1, s2, s3])
     db_session.commit()
 
     # s1 has 'chill' mood but 'medium' energy.
@@ -138,13 +147,6 @@ def test_playlist_generator_relaxation_fallback(db_session: Session) -> None:
     db_session.add_all([t1, t2])
     db_session.commit()
 
-    # Query with mood "chill" and energy low.
-    # Initially:
-    # - semantic_search(moods=['chill'], energy_max=0.3) will return 0 matches (s1 is 0.5, s2 is 0.2 but mood is 'calm')
-    # Step-down fallback should trigger:
-    # - Step 5a: Drop energy filter -> returns s1 (mood 'chill' matches)
-    # - Step 5c: Drop activities and energy -> returns s1
-    # - We should see s1 in the playlist due to energy dropping relaxation.
     playlist_data = PlaylistService.generate_playlist(
         name="Relaxation Test",
         strategy="hybrid",
@@ -152,6 +154,225 @@ def test_playlist_generator_relaxation_fallback(db_session: Session) -> None:
         target_length=5,
         session=db_session,
     )
-    
+
     song_ids = [s["id"] for s in playlist_data["songs"]]
-    assert s1.id in song_ids
+    assert song_ids == [s2.id]
+    assert playlist_data["songs_count"] == 1
+
+
+def test_recommendation_expansion_uses_top_semantic_matches(db_session: Session) -> None:
+    """Verifies recommendations expand from direct semantic matches, not only a seed title."""
+    sem1 = Song(path="/path/sem1.mp3", hash="sem1", title="Workout One", artist="Artist A", duration=180.0)
+    sem2 = Song(path="/path/sem2.mp3", hash="sem2", title="Workout Two", artist="Artist B", duration=180.0)
+    valid1 = Song(path="/path/valid1.mp3", hash="valid1", title="Valid One", artist="Artist C", duration=180.0)
+    valid2 = Song(path="/path/valid2.mp3", hash="valid2", title="Valid Two", artist="Artist D", duration=180.0)
+    invalid = Song(path="/path/invalid.mp3", hash="invalid", title="Sad Piano", artist="Artist E", duration=180.0)
+    db_session.add_all([sem1, sem2, valid1, valid2, invalid])
+    db_session.commit()
+
+    tags = [
+        SemanticTags(song_id=sem1.id, moods=json.dumps(["energetic"]), activities=json.dumps(["workout"]), energy="high"),
+        SemanticTags(song_id=sem2.id, moods=json.dumps(["energetic"]), activities=json.dumps(["workout"]), energy="high"),
+        SemanticTags(song_id=valid1.id, moods=json.dumps(["energetic"]), activities=json.dumps(["workout"]), energy="high"),
+        SemanticTags(song_id=valid2.id, moods=json.dumps(["energetic"]), activities=json.dumps(["workout"]), energy="high"),
+        SemanticTags(song_id=invalid.id, moods=json.dumps(["sad"]), activities=json.dumps(["sleeping"]), energy="low"),
+    ]
+    db_session.add_all(tags)
+    db_session.commit()
+
+    def mock_recommend(song_id: int, strategy: str, limit: int, session: Session) -> list[dict]:
+        if song_id == sem1.id:
+            return [
+                {"id": valid1.id, "title": valid1.title, "artist": valid1.artist, "score": 0.95},
+                {"id": invalid.id, "title": invalid.title, "artist": invalid.artist, "score": 0.90},
+            ]
+        if song_id == sem2.id:
+            return [{"id": valid2.id, "title": valid2.title, "artist": valid2.artist, "score": 0.94}]
+        return []
+
+    with patch("app.services.recommendation.RecommendationService.recommend", side_effect=mock_recommend) as rec_mock:
+        playlist_data = PlaylistService.generate_playlist(
+            name="Workout Expansion",
+            strategy="hybrid",
+            filters={"moods": ["energetic"], "activities": ["workout"]},
+            target_length=10,
+            session=db_session,
+        )
+
+    seed_ids = [call.kwargs["song_id"] for call in rec_mock.call_args_list]
+    song_ids = [s["id"] for s in playlist_data["songs"]]
+
+    assert seed_ids == [sem1.id, sem2.id, valid1.id]
+    assert valid1.id in song_ids
+    assert valid2.id in song_ids
+    assert invalid.id not in song_ids
+
+
+def test_recommendation_candidates_receive_source_confidence(db_session: Session) -> None:
+    """Verifies recommendation confidence reflects its source strategy."""
+    seed = Song(path="/path/conf-seed.mp3", hash="conf-seed", title="Confidence Seed", artist="Artist A", duration=180.0)
+    rec = Song(path="/path/conf-rec.mp3", hash="conf-rec", title="Confidence Rec", artist="Artist B", duration=180.0)
+    db_session.add_all([seed, rec])
+    db_session.commit()
+
+    mock_recs = [{"id": rec.id, "title": rec.title, "artist": rec.artist, "score": 0.88}]
+
+    with patch("app.services.recommendation.RecommendationService.recommend", return_value=mock_recs):
+        candidates = _construct_playlist_candidates(
+            strategy="vector",
+            filters={"seed_song_title": "Confidence Seed"},
+            target_length=5,
+            session=db_session,
+        )
+
+    rec_candidate = next(candidate for candidate in candidates if candidate.song_id == rec.id)
+    assert rec_candidate.source == "vector_recommendation"
+    assert rec_candidate.similarity_score == 0.88
+    assert rec_candidate.confidence == pytest.approx(0.90)
+
+
+def test_confidence_scoring_applies_semantic_boosts(db_session: Session) -> None:
+    """Verifies matching semantic dimensions boost recommendation confidence internally."""
+    song = Song(path="/path/boost.mp3", hash="boost", title="Boosted Rec", artist="Artist C", duration=180.0)
+    db_session.add(song)
+    db_session.commit()
+
+    tags = SemanticTags(
+        song_id=song.id,
+        moods=json.dumps(["energetic"]),
+        activities=json.dumps(["workout"]),
+        energy="high",
+    )
+    db_session.add(tags)
+    db_session.commit()
+
+    scored = _score_candidate_confidence(
+        PlaylistCandidate(song_id=song.id, source="content_recommendation", similarity_score=0.77),
+        filters={"moods": ["energetic"], "activities": ["workout"], "energy_min": 0.7},
+        session=db_session,
+    )
+
+    assert scored.confidence == pytest.approx(0.91)
+    assert scored.similarity_score == 0.77
+
+
+def test_candidate_ranking_prioritizes_confidence_similarity_and_diversity(db_session: Session) -> None:
+    """Verifies ranking uses confidence first, then similarity and artist diversity."""
+    s1 = Song(path="/path/rank1.mp3", hash="rank1", title="Rank One", artist="Artist A", duration=180.0)
+    s2 = Song(path="/path/rank2.mp3", hash="rank2", title="Rank Two", artist="Artist A", duration=180.0)
+    s3 = Song(path="/path/rank3.mp3", hash="rank3", title="Rank Three", artist="Artist B", duration=180.0)
+    s4 = Song(path="/path/rank4.mp3", hash="rank4", title="Rank Four", artist="Artist C", duration=180.0)
+    db_session.add_all([s1, s2, s3, s4])
+    db_session.commit()
+
+    ranked = _rank_candidates(
+        [
+            PlaylistCandidate(song_id=s1.id, source="hybrid_recommendation", similarity_score=0.90, confidence=0.95),
+            PlaylistCandidate(song_id=s2.id, source="hybrid_recommendation", similarity_score=0.90, confidence=0.95),
+            PlaylistCandidate(song_id=s3.id, source="hybrid_recommendation", similarity_score=0.90, confidence=0.95),
+            PlaylistCandidate(song_id=s4.id, source="semantic", similarity_score=0.10, confidence=1.00),
+        ],
+        session=db_session,
+    )
+
+    assert [candidate.song_id for candidate in ranked] == [s4.id, s1.id, s3.id, s2.id]
+
+
+def test_confidence_threshold_stops_at_first_weak_candidate() -> None:
+    """Verifies low-confidence candidates stop playlist construction."""
+    candidates = [
+        PlaylistCandidate(song_id=1, source="semantic", confidence=1.0),
+        PlaylistCandidate(song_id=2, source="vector_recommendation", confidence=0.90),
+        PlaylistCandidate(song_id=3, source="unknown", confidence=0.72),
+        PlaylistCandidate(song_id=4, source="semantic", confidence=1.0),
+    ]
+
+    accepted = _apply_confidence_threshold(candidates)
+
+    assert [candidate.song_id for candidate in accepted] == [1, 2]
+
+
+def test_sparse_semantic_matches_expose_shortfall_feedback(db_session: Session) -> None:
+    """Phase 8: Verifies sparse matches expose shortfall metadata without silent padding."""
+    s1 = Song(path="/path/sp1.mp3", hash="sp1", title="Chill Track", artist="Artist A", duration=180.0)
+    db_session.add(s1)
+    db_session.commit()
+
+    t1 = SemanticTags(song_id=s1.id, moods=json.dumps(["chill"]), energy="low")
+    db_session.add(t1)
+    db_session.commit()
+
+    playlist_data = PlaylistService.generate_playlist(
+        name="Phase 8 Test",
+        strategy="hybrid",
+        filters={"moods": ["chill"]},
+        target_length=25,
+        session=db_session,
+    )
+
+    assert playlist_data["requested_length"] == 25
+    assert playlist_data["found_length"] == 1
+    assert "Only 1 song(s) strongly matched" in playlist_data["shortfall_reason"]
+    assert "Found 1 high-quality match(es) matching your request (requested 25)." in playlist_data["feedback_message"]
+
+    preview_details = PlaylistService.generate_playlist_preview_details(
+        strategy="hybrid",
+        filters={"moods": ["chill"]},
+        target_length=20,
+        session=db_session,
+    )
+    assert preview_details["requested_length"] == 20
+    assert preview_details["found_length"] == 1
+    assert preview_details["shortfall_reason"] is not None
+    assert preview_details["feedback_message"] is not None
+
+
+def test_post_construction_playlist_naming_generated_from_final_songs(db_session: Session) -> None:
+    """Phase 9: Verifies LLM generates title/description after song selection from final tracks."""
+    s1 = Song(path="/path/p9_1.mp3", hash="p91", title="Neon City", artist="Synthwave Band", duration=200.0)
+    db_session.add(s1)
+    db_session.commit()
+
+    t1 = SemanticTags(song_id=s1.id, moods=json.dumps(["synthwave", "nocturnal"]), energy="high")
+    db_session.add(t1)
+    db_session.commit()
+
+    with patch("app.assistant.parser.LLMParser.generate_playlist_name", return_value=("Midnight Neon", "A nocturnal synthwave vibe.")) as mock_naming:
+        playlist_data = PlaylistService.generate_playlist(
+            name="Generic Synthwave Mix",
+            strategy="hybrid",
+            filters={"moods": ["synthwave"]},
+            target_length=10,
+            session=db_session,
+        )
+
+    # Verify naming was called with final selected songs AFTER song selection
+    mock_naming.assert_called_once()
+    assert playlist_data["name"] == "Midnight Neon"
+    assert playlist_data["description"] == "A nocturnal synthwave vibe."
+
+
+def test_post_construction_playlist_naming_fallback_on_error(db_session: Session) -> None:
+    """Phase 9: Verifies LLM naming failure gracefully falls back to default name without breaking execution."""
+    s1 = Song(path="/path/p9_2.mp3", hash="p92", title="Quiet Rain", artist="Lofi Beats", duration=180.0)
+    db_session.add(s1)
+    db_session.commit()
+
+    t1 = SemanticTags(song_id=s1.id, moods=json.dumps(["calm"]), energy="low")
+    db_session.add(t1)
+    db_session.commit()
+
+    with patch("requests.post", side_effect=Exception("Ollama offline")):
+        playlist_data = PlaylistService.generate_playlist(
+            name="Default Rain Mix",
+            strategy="hybrid",
+            filters={"moods": ["calm"]},
+            target_length=5,
+            session=db_session,
+        )
+
+    # Falls back gracefully to original name
+    assert playlist_data["name"] == "Default Rain Mix"
+    assert playlist_data["description"] is None
+
+

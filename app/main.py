@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 from sqlalchemy.orm import Session
-from app.config.settings import settings
+from app.config.settings import PROJECT_ROOT, set_ollama_model, settings
 from app.database.connection import get_session
 from app.database.models import Song
 from app.metadata.semantic import enrich_song_semantics
@@ -15,7 +15,80 @@ from app.utils.logging import setup_logging
 logger = logging.getLogger("music_rec.main")
 
 
+def _check_and_print_ollama_status(model_name: str) -> None:
+    """Checks local Ollama status and reports model availability."""
+    import requests
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(settings.ollama_url)
+        tags_url = f"{parsed.scheme}://{parsed.netloc}/api/tags"
+        response = requests.get(tags_url, timeout=2.0)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            installed = [m.get("name") for m in models if m.get("name")]
+            print(f"Ollama Server Status:  Connected")
+            print(f"Installed Models:       {', '.join(installed) if installed else 'None'}")
+
+            match_found = False
+            if model_name in installed:
+                match_found = True
+            else:
+                base_name = model_name.split(":")[0].lower()
+                for inst in installed:
+                    if inst.split(":")[0].lower() == base_name:
+                        match_found = True
+                        break
+
+            if not match_found and installed:
+                print(f"Notice: Model '{model_name}' is not currently downloaded in Ollama. Run 'ollama pull {model_name}' to download it.")
+        else:
+            print(f"Ollama Server Status:  HTTP {response.status_code}")
+    except Exception:
+        print("Ollama Server Status:  Unreachable (Ollama server might not be running locally)")
+
+
+def run_set_model(args) -> None:
+    """CLI handler for setting and persisting the LLM model."""
+    model_name = getattr(args, "model_name", None) or getattr(args, "model", None)
+    if not model_name:
+        print(f"Current LLM model: {settings.ollama_model}")
+        print("Usage: python -m app.main set-model <model_name>")
+        return
+
+    updated = set_ollama_model(model_name, persist=True)
+    print(f"Successfully updated project LLM model to '{updated}'.")
+    print(f"Persisted in: {PROJECT_ROOT / '.env'}")
+    _check_and_print_ollama_status(updated)
+
+
+def run_get_model(args) -> None:
+    """CLI handler for displaying the current LLM model and status."""
+    current_model = settings.ollama_model
+    print(f"Current Project LLM Model: {current_model}")
+    print(f"Ollama API URL:           {settings.ollama_url}")
+    _check_and_print_ollama_status(current_model)
+
+
+def run_config(args) -> None:
+    """CLI handler for configuration commands."""
+    config_command = getattr(args, "config_command", None)
+    model_name = getattr(args, "model_name", None) or getattr(args, "model", None)
+    show = getattr(args, "show", False)
+
+    if config_command in ("set-model", "set-llm") or (model_name and not show):
+        if model_name:
+            run_set_model(args)
+        else:
+            print("Error: Please specify a model name to set. E.g.: python -m app.main config set-model llama3")
+    elif config_command in ("get-model", "get-llm", "show-model") or show or not config_command:
+        run_get_model(args)
+    else:
+        run_get_model(args)
+
+
 def _default_vector_index_path() -> Path:
+
     """Place the vector index beside the configured SQLite database."""
     sqlite_prefix = "sqlite:///"
     if settings.database_url.startswith(sqlite_prefix):
@@ -168,7 +241,56 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="AI-powered Local Music Recommendation System CLI."
     )
+    parser.add_argument(
+        "--model",
+        "--llm",
+        type=str,
+        default=None,
+        help="LLM model name to use or set (e.g. mistral, llama3, gemma).",
+    )
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
+
+    # set-model / set-llm subcommand
+    set_model_parser = subparsers.add_parser(
+        "set-model",
+        aliases=["set-llm"],
+        help="Set and persist the LLM model for the entire project.",
+    )
+    set_model_parser.add_argument(
+        "model_name",
+        nargs="?",
+        default=None,
+        help="Name of the Ollama model to set (e.g. mistral, llama3, gemma).",
+    )
+
+    # get-model / get-llm / show-model subcommand
+    subparsers.add_parser(
+        "get-model",
+        aliases=["get-llm", "show-model"],
+        help="Show the currently configured LLM model and local Ollama status.",
+    )
+
+    # config subcommand
+    config_parser = subparsers.add_parser(
+        "config",
+        help="View or change application configuration settings.",
+    )
+    config_parser.add_argument(
+        "--model",
+        "--llm",
+        type=str,
+        default=None,
+        help="Set LLM model.",
+    )
+    config_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show current configuration.",
+    )
+    config_subparsers = config_parser.add_subparsers(dest="config_command", help="Config subcommand")
+    cfg_set_parser = config_subparsers.add_parser("set-model", aliases=["set-llm"], help="Set LLM model.")
+    cfg_set_parser.add_argument("model_name", nargs="?", default=None, help="Name of the Ollama model to set.")
+    config_subparsers.add_parser("get-model", aliases=["get-llm", "show-model"], help="Show current LLM model.")
 
     # scan subcommand
     scan_parser = subparsers.add_parser(
@@ -251,7 +373,17 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "scan":
+    # If top-level --model / --llm flag is provided for an execution command
+    if args.model and args.command not in ("set-model", "set-llm", "config"):
+        set_ollama_model(args.model, persist=False)
+
+    if args.command in ("set-model", "set-llm"):
+        run_set_model(args)
+    elif args.command in ("get-model", "get-llm", "show-model"):
+        run_get_model(args)
+    elif args.command == "config":
+        run_config(args)
+    elif args.command == "scan":
         run_scan(args)
     elif args.command == "enrich-semantic":
         run_enrich_semantic(args)
@@ -269,6 +401,7 @@ def main() -> None:
         run_web(args)
     else:
         parser.print_help()
+
 
 
 if __name__ == "__main__":

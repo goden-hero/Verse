@@ -516,3 +516,81 @@ class LLMParser:
 
         logger.error("All %d parser attempts failed or produced invalid plans.", max_retries)
         return None
+
+    def generate_playlist_name(
+        self,
+        songs: list[dict],
+        prompt: str | None,
+        filters: dict,
+        default_name: str,
+    ) -> tuple[str, str | None]:
+        """Generates evocative creative title and description for a playlist based on final selected songs.
+        
+        Runs strictly AFTER song selection. Returns (title, description).
+        Falls back to (default_name, None) on any LLM error or timeout.
+        """
+        if not songs:
+            return default_name, None
+
+        moods = filters.get("moods", [])
+        activities = filters.get("activities", [])
+
+        song_descriptions = []
+        artists = set()
+        genres = set()
+        for s in songs[:15]:
+            title = s.get("title", "Unknown")
+            artist = s.get("artist", "Unknown")
+            song_descriptions.append(f"'{title}' by {artist}")
+            if artist and artist != "Unknown":
+                artists.add(artist)
+            g = s.get("original_genre") or s.get("genre")
+            if g and g != "Unknown":
+                genres.add(g)
+
+        llm_prompt = (
+            "You are an expert music curator and album title writer.\n"
+            "Generate a creative, evocative title and a 1-sentence description for a music playlist.\n"
+            f"User Prompt/Theme: {prompt or default_name}\n"
+            f"Moods: {', '.join(moods) if moods else 'Various'}\n"
+            f"Activities: {', '.join(activities) if activities else 'General'}\n"
+            f"Genres: {', '.join(list(genres)[:5]) if genres else 'Various'}\n"
+            f"Artists: {', '.join(list(artists)[:5]) if artists else 'Various'}\n"
+            f"Final Selected Songs:\n- " + "\n- ".join(song_descriptions[:10]) + "\n\n"
+            "Output ONLY a valid JSON object matching this schema:\n"
+            "{\n"
+            '  "title": "Creative Evocative Title",\n'
+            '  "description": "Short 1-sentence description of the playlist vibe."\n'
+            "}\n"
+            "Do NOT output generic titles like 'Workout Mix' or 'Chill Playlist'. Output atmospheric names like 'Midnight Neon', 'Steel & Sweat', 'Echoes of Autumn', 'Clouds Over Kyoto'."
+        )
+
+        payload = {
+            "model": self.model,
+            "prompt": llm_prompt,
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.7,
+            }
+        }
+
+        try:
+            resp = requests.post(
+                self.api_url,
+                json=payload,
+                timeout=settings.ollama_read_timeout,
+            )
+            if resp.status_code == 200:
+                body = resp.json()
+                raw_text = body.get("response", "")
+                parsed = json.loads(raw_text)
+                title = parsed.get("title")
+                description = parsed.get("description")
+                if title and isinstance(title, str) and title.strip():
+                    return title.strip(), description if isinstance(description, str) else None
+        except Exception as err:
+            logger.warning("LLM playlist naming failed, falling back to default name: %s", err)
+
+        return default_name, None
+

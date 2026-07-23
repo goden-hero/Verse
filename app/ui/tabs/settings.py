@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.config.settings import settings
+from app.config.settings import set_ollama_model, settings
 
 
 class SettingsTab(QWidget):
@@ -61,21 +61,11 @@ class SettingsTab(QWidget):
         return Path(self.vector_index_input.text())
 
     def save_settings(self) -> None:
-        # We modify the settings object attributes in-memory
-        # Note: Since settings dataclass is frozen, we bypass it or we just set variables
-        # in settings or override them if mutable, but the settings object we defined is frozen=True.
-        # Wait! Is it frozen=True?
-        # Let's check app/config/settings.py:
-        # @dataclass(frozen=True)
-        # Yes, it is!
-        # If we need to write changes, we can write them back to an environment dict
-        # or we can modify the main settings object by creating a new Settings or mutating via object.__setattr__.
-        # Mutating via object.__setattr__ is a common Python trick to override frozen dataclasses!
-        # Let's do that to avoid complex reloading logic:
         try:
+            set_ollama_model(self.ollama_model_input.text(), persist=True)
             object.__setattr__(settings, "database_url", self.db_url_input.text())
             object.__setattr__(settings, "ollama_url", self.ollama_url_input.text())
-            object.__setattr__(settings, "ollama_model", self.ollama_model_input.text())
-            self.status_label.setText("Settings saved successfully (in-memory).")
+            self.status_label.setText("Settings saved successfully.")
         except Exception as e:
             self.status_label.setText(f"Error saving settings: {e}")
+

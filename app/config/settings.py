@@ -79,3 +79,60 @@ class Settings:
 
 # Global settings instance
 settings = Settings()
+
+
+def set_ollama_model(model_name: str, persist: bool = True) -> str:
+    """Sets the active Ollama LLM model name for the application.
+
+    Args:
+        model_name: The target model name (e.g. 'mistral', 'llama3:latest').
+        persist: If True, writes the update to the root .env file.
+
+    Returns:
+        The updated model name.
+    """
+    model_name = model_name.strip()
+    object.__setattr__(settings, "ollama_model", model_name)
+    os.environ["OLLAMA_MODEL"] = model_name
+
+    # Clear Ollama model resolution cache if loaded
+    try:
+        from app.utils.ollama import resolve_ollama_model
+        resolve_ollama_model.cache_clear()
+    except Exception:
+        pass
+
+    # Reset health check state in LLMParser if loaded
+    try:
+        from app.assistant.parser import LLMParser
+        LLMParser._health_checked = False
+        LLMParser._is_healthy = False
+    except Exception:
+        pass
+
+    if persist:
+        env_path = PROJECT_ROOT / ".env"
+        lines = []
+        key_found = False
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            new_lines = []
+            for line in lines:
+                if line.strip().startswith("OLLAMA_MODEL="):
+                    new_lines.append(f"OLLAMA_MODEL={model_name}\n")
+                    key_found = True
+                else:
+                    new_lines.append(line)
+            lines = new_lines
+
+        if not key_found:
+            if lines and not lines[-1].endswith("\n"):
+                lines.append("\n")
+            lines.append(f"OLLAMA_MODEL={model_name}\n")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+    return model_name
+
