@@ -7,23 +7,18 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
+      - name: Update repository
+        run: |
+          cd /home/pyro/apps/Verse-test
 
-          script: |
-            cd /home/pyro/apps/Verse-test
+          git fetch origin
+          git checkout Testing
+          git reset --hard origin/Testing
 
-            git fetch origin
-            git switch Testing
-            git pull origin Testing
-
-            sudo systemctl restart verse-test
-
-            systemctl status verse-test --no-pager
+      - name: Restart Verse
+        run: |
+          sudo systemctl restart verse-test
+          systemctl status verse-test --no-pager
