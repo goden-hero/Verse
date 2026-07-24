@@ -211,3 +211,4 @@ pytest
 pytest tests/test_phase15_rigorous.py
 ```
 All unit tests operate on in-memory SQLite instances or mocked file structures, leaving local assets clean.
+
