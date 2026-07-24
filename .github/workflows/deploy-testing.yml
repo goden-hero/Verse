@@ -1,0 +1,29 @@
+name: Deploy Testing
+
+on:
+  push:
+    branches:
+      - Testing
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+
+          script: |
+            cd /home/pyro/apps/Verse-test
+
+            git fetch origin
+            git switch Testing
+            git pull origin Testing
+
+            sudo systemctl restart verse-test
+
+            systemctl status verse-test --no-pager
