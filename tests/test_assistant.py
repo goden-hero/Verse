@@ -173,7 +173,7 @@ def test_pydantic_float_coercion():
     }
     plan = ActionPlan.model_validate({"plan": [raw_playlist]})
     assert plan.plan[0].target_length == 16
-    
+
     raw_playlist_str = {
         "action": "generate_playlist",
         "playlist_name": "Chill Mix",
@@ -189,6 +189,8 @@ def test_pydantic_float_coercion():
     }
     plan_rec = ActionPlan.model_validate({"plan": [raw_recommend]})
     assert plan_rec.plan[0].limit == 5
+
+
 
 
 def test_history_manager_logs_and_retrieves(db_session):

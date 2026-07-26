@@ -7,8 +7,10 @@ from app.services.playlist import PlaylistService
 from app.services.search import SearchService
 from app.services.library import LibraryService
 from app.services.recommendation import RecommendationService
+from app.recommendations.selector import map_ui_to_backend_strategy
 
 logger = logging.getLogger("music_rec.services.assistant")
+
 
 
 class AssistantService:
@@ -88,8 +90,8 @@ class AssistantService:
 
                 if action_type == "generate_playlist":
                     main_playlist_title = action_item.playlist_name or main_playlist_title
-                    strategy_mapped = action_item.strategy or "hybrid"
-                    req_len = action_item.target_length or 20
+                    strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
+                    req_len = action_item.target_length or 25
                     preview_details = PlaylistService.generate_playlist_preview_details(
                         strategy=strategy_mapped,
                         filters=action_item.filters or {},
@@ -113,12 +115,14 @@ class AssistantService:
                 elif action_type == "recommend_song":
                     song = LibraryService.get_song_by_title(action_item.song_title, session=session)
                     if song:
+                        strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
                         out_songs = RecommendationService.recommend(
                             song_id=song["id"],
-                            strategy=action_item.strategy or "hybrid",
+                            strategy=strategy_mapped,
                             limit=action_item.limit or 10,
                             session=session,
                         )
+
 
                 steps_out.append({
                     "action": action_type,
@@ -168,22 +172,39 @@ class AssistantService:
 
         # 4. Construct natural conversational message response
         if playlist_preview:
-            if playlist_preview.get("feedback_message"):
-                msg_text = f"{playlist_preview['feedback_message']} Here's your playlist:"
+            found_count = playlist_preview.get("songs_count", 0)
+            feedback = playlist_preview.get("feedback_message")
+
+            if found_count == 0:
+                if feedback:
+                    msg_text = f"{feedback} Try scanning more music or searching for different moods."
+                else:
+                    msg_text = f"No matching songs were found in your library for '{clean_msg}'. Try scanning your music collection."
+            elif feedback:
+                msg_text = f"{feedback} Here's your playlist:"
             else:
                 msg_text = (
-                    f"Perfect choice! I've created a playlist with {playlist_preview['songs_count']} tracks "
+                    f"Perfect choice! I've created a playlist with {found_count} tracks "
                     f"that capture the vibe of your request. Here's your playlist:"
                 )
         else:
-            msg_text = f"I executed your request for '{clean_msg}'."
+            total_songs_found = sum(
+                s.get("output", {}).get("songs_count", 0)
+                for s in steps_out
+                if isinstance(s.get("output"), dict)
+            )
+            if total_songs_found == 0:
+                msg_text = f"No songs matching '{clean_msg}' were found in your music library. Try scanning your music collection or trying another search."
+            else:
+                msg_text = f"I executed your request for '{clean_msg}' and found {total_songs_found} matching tracks."
 
         return {
             "message": msg_text,
             "success": True,
             "steps": steps_out,
-            "playlist": playlist_preview
+            "playlist": playlist_preview if (playlist_preview and playlist_preview.get("songs_count", 0) > 0) else playlist_preview,
         }
+
 
 
     @staticmethod

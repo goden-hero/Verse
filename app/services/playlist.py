@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from app.database.models import Playlist, PlaylistSong, Song, SemanticTags
 from app.services.search import SearchService, _expand_terms
 from app.services.recommendation import RecommendationService
+from app.recommendations.selector import map_ui_to_backend_strategy
 
 logger = logging.getLogger("music_rec.services.playlist")
+
 
 
 @dataclass(frozen=True)
@@ -363,6 +365,9 @@ def _construct_playlist_candidates(
     """Runs retrieval, expansion, validation, and construction with target as an upper bound."""
     if target_length <= 0:
         return []
+
+    strategy = map_ui_to_backend_strategy(strategy, session)
+
 
     initial_candidates = _validate_candidates_semantically(
         _retrieve_initial_candidates(filters, session),

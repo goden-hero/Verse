@@ -26,19 +26,21 @@ class RecommendSong(BaseModel):
 
     action: Literal["recommend_song"] = "recommend_song"
     song_title: str
-    strategy: str = "vector"
-    limit: int = 10
+    strategy: str = "automatic"
+    limit: int = Field(default=10, ge=1, le=100)
 
     @field_validator("limit", mode="before")
     @classmethod
     def coerce_limit(cls, v):
-        if isinstance(v, (int, float)):
-            return int(round(v))
+        if v is None:
+            return 10
         if isinstance(v, str):
             try:
-                return int(round(float(v)))
+                v = float(v)
             except ValueError:
-                pass
+                raise ValueError("limit must be a valid integer")
+        if isinstance(v, (int, float)):
+            return int(round(v))
         return v
 
 
@@ -47,21 +49,25 @@ class GeneratePlaylist(BaseModel):
 
     action: Literal["generate_playlist"] = "generate_playlist"
     playlist_name: str
-    strategy: str = "hybrid"
+    strategy: str = "automatic"
     filters: Dict = Field(default_factory=dict)
-    target_length: int = 25
+    target_length: int = Field(default=25, ge=1, le=500)
 
     @field_validator("target_length", mode="before")
     @classmethod
     def coerce_target_length(cls, v):
-        if isinstance(v, (int, float)):
-            return int(round(v))
+        if v is None:
+            return 25
         if isinstance(v, str):
             try:
-                return int(round(float(v)))
+                v = float(v)
             except ValueError:
-                pass
+                raise ValueError("target_length must be a valid integer")
+        if isinstance(v, (int, float)):
+            return int(round(v))
         return v
+
+
 
 
 class PlayPlaylist(BaseModel):
