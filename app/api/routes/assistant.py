@@ -10,8 +10,10 @@ router = APIRouter(tags=["Assistant"])
 def assistant_chat(payload: ChatRequest, db: Session = Depends(get_db)):
     """Handles natural language chat prompts for music recommendation and returns structured plans and playlist previews."""
     try:
-        res = AssistantService.process_chat(message=payload.message, session=db)
+        use_cache = payload.use_cache if payload.use_cache is not None else True
+        res = AssistantService.process_chat(message=payload.message, session=db, use_cache=use_cache)
         return res
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

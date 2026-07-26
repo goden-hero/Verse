@@ -124,21 +124,24 @@ class LLMParser:
         LLMParser._health_checked = True
         LLMParser._is_healthy = True
 
-    def parse_intent(self, user_prompt: str, session: Session, max_retries: int = 3) -> dict | None:
+    def parse_intent(self, user_prompt: str, session: Session, max_retries: int = 3, use_cache: bool = True) -> dict | None:
         """Parses the user prompt into a validated dictionary matching ActionPlan schema.
 
-        Leverages SQLite cache and implements error-aware retries for schema conformance.
+        Leverages SQLite cache when use_cache=True and implements error-aware retries for schema conformance.
         """
-        # 1. Check cache first
-        cached = LLMCacheManager.get_cached_response(user_prompt, session)
-        if cached:
-            try:
-                parsed = json.loads(cached)
-                # Ensure it still validates against the current schema
-                ActionPlan.model_validate(parsed)
-                return parsed
-            except Exception as e:
-                logger.warning("Cached plan validation failed, recalculating: %s", e)
+        # 1. Check cache first if enabled
+        if use_cache:
+            cached = LLMCacheManager.get_cached_response(user_prompt, session)
+            if cached:
+                try:
+                    parsed = json.loads(cached)
+                    # Ensure it still validates against the current schema
+                    ActionPlan.model_validate(parsed)
+                    logger.info("Retrieved valid ActionPlan from LLMCache for prompt: '%s'", user_prompt)
+                    return parsed
+                except Exception as e:
+                    logger.warning("Cached plan validation failed, recalculating: %s", e)
+
 
         # Verify connectivity and model availability before first request
         self.verify_health()

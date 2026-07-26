@@ -17,7 +17,7 @@ class AssistantService:
     """Service handling assistant prompts and returning structured playlist responses."""
 
     @staticmethod
-    def process_chat(message: str, session: Session) -> dict:
+    def process_chat(message: str, session: Session, use_cache: bool = True) -> dict:
         """Parses user message via LLMParser and executes plan to return structured JSON."""
         clean_msg = message.strip()
         if not clean_msg:
@@ -28,10 +28,20 @@ class AssistantService:
                 "playlist": None,
             }
 
+        logger.info("[Assistant] Stage 1 - User Input: '%s' (use_cache=%s)", clean_msg, use_cache)
+
         # 1. Parse prompt into plan_dict using LLMParser
         try:
             parser = LLMParser()
-            plan_dict = parser.parse_intent(clean_msg, session)
+            if not use_cache:
+                try:
+                    plan_dict = parser.parse_intent(clean_msg, session, use_cache=False)
+                except TypeError:
+                    plan_dict = parser.parse_intent(clean_msg, session)
+            else:
+                plan_dict = parser.parse_intent(clean_msg, session)
+            logger.info("[Assistant] Stage 2 - Parsed Raw ActionPlan JSON: %s", plan_dict)
+
         except ConnectionError as e:
             logger.warning("Ollama connection error: %s", e)
             return {
@@ -58,6 +68,7 @@ class AssistantService:
             }
 
         if not plan_dict or not plan_dict.get("plan"):
+            logger.info("[Assistant] Stage 2 - Empty ActionPlan generated for prompt: '%s'", clean_msg)
             return {
                 "message": "I couldn't understand that request. Try asking for a mood, genre, or artist mix!",
                 "success": False,
@@ -68,6 +79,7 @@ class AssistantService:
         # 2. Build validated ActionPlan
         try:
             action_plan = Planner.create_plan(plan_dict)
+            logger.info("[Assistant] Stage 3 - Validated ActionPlan objects: %s", action_plan)
         except Exception as e:
             logger.error("Planner schema validation failed: %s", e)
             return {
@@ -84,6 +96,7 @@ class AssistantService:
 
         for idx, action_item in enumerate(action_plan.plan):
             action_type = action_item.action
+            logger.info("[Assistant] Stage 4 - Executing Step #%d Action: '%s' | Item: %s", idx + 1, action_type, action_item)
             try:
                 out_songs = []
                 preview_details = None
@@ -92,6 +105,7 @@ class AssistantService:
                     main_playlist_title = action_item.playlist_name or main_playlist_title
                     strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
                     req_len = action_item.target_length or 25
+                    logger.info("[Assistant] Executing generate_playlist preview (strategy: %s, filters: %s, target_length: %d)", strategy_mapped, action_item.filters, req_len)
                     preview_details = PlaylistService.generate_playlist_preview_details(
                         strategy=strategy_mapped,
                         filters=action_item.filters or {},
@@ -100,6 +114,8 @@ class AssistantService:
                         name=main_playlist_title,
                     )
                     out_songs = preview_details["songs"]
+                    logger.info("[Assistant] PlaylistService returned %d preview tracks (title: '%s')", len(out_songs), preview_details.get("name"))
+
                 elif action_type == "semantic_search":
                     matches = SearchService.semantic_search(
                         moods=action_item.moods,
@@ -198,12 +214,15 @@ class AssistantService:
             else:
                 msg_text = f"I executed your request for '{clean_msg}' and found {total_songs_found} matching tracks."
 
+        logger.info("[Assistant] Stage 5 - Final Message: '%s' | Playlist Preview Count: %d", msg_text, playlist_preview.get("songs_count", 0) if playlist_preview else 0)
+
         return {
             "message": msg_text,
             "success": True,
             "steps": steps_out,
             "playlist": playlist_preview if (playlist_preview and playlist_preview.get("songs_count", 0) > 0) else playlist_preview,
         }
+
 
 
 

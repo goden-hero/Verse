@@ -62,6 +62,8 @@ class LikeRecordRequest(BaseModel):
 class ChatRequest(BaseModel):
     """Pydantic model representing an AI Assistant prompt message request."""
     message: str
+    use_cache: Optional[bool] = True
+
 
 class ChatStepResponse(BaseModel):
     """Pydantic model representing an execution step's result."""
