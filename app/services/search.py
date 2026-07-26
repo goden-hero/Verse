@@ -10,18 +10,25 @@ from app.search.index import FAISSIndex
 
 
 SYNONYMS = {
-    # Moods
+    # Moods & Adjectives
     "sad": ["sad", "sadness", "melancholic", "somber", "depressing", "gloomy", "heartbroken", "sorrowful", "tearful", "grief", "pensive", "lonely"],
-    "happy": ["happy", "happiness", "joyful", "cheerful", "upbeat", "excited", "energetic", "glad", "bright", "celebratory", "elated", "positive"],
+    "happy": ["happy", "happiness", "joyful", "cheerful", "upbeat", "excited", "energetic", "glad", "bright", "celebratory", "elated", "positive", "sweet", "cute"],
     "relaxing": ["relaxing", "relaxed", "calm", "chill", "peaceful", "soothing", "tranquil", "mellow", "serene", "meditative", "quiet", "soft", "gentle"],
-    "chill": ["chill", "mellow", "relaxed", "calm", "laid-back", "smooth", "easygoing", "lofi", "ambient"],
-    "energetic": ["energetic", "excited", "upbeat", "workout", "hype", "pumped", "intense", "high-energy", "aggressive", "fast", "powerful", "heavy"],
+    "chill": ["chill", "mellow", "relaxed", "calm", "laid-back", "smooth", "easygoing", "lofi", "ambient", "cozy"],
+    "energetic": ["energetic", "excited", "upbeat", "workout", "hype", "pumped", "intense", "high-energy", "high energy", "aggressive", "fast", "powerful", "heavy"],
+    "sleepy": ["sleepy", "sleeping", "sleep", "bedtime", "relaxing", "dreaming", "night", "rest", "resting", "calm", "soothing", "soft", "mellow"],
+    "cute": ["cute", "cheerful", "happy", "joyful", "sweet", "playful", "upbeat", "bright"],
+    "cozy": ["cozy", "warm", "chill", "mellow", "peaceful", "relaxing", "soothing"],
+    "dreamy": ["dreamy", "ethereal", "ambient", "calm", "soft", "reflective", "relaxing"],
+    "lofi": ["lofi", "chill", "mellow", "ambient", "relaxing", "studying"],
     
     # Activities
     "studying": ["studying", "study", "concentration", "focus", "work", "reading", "coding", "writing"],
     "workout": ["workout", "gym", "running", "exercise", "training", "lifting", "cardio", "fitness", "active", "excited"],
     "sleeping": ["sleeping", "sleep", "bedtime", "relaxing", "dreaming", "night", "rest", "resting"],
+    "driving": ["driving", "drive", "roadtrip", "car", "night drive", "cruising"],
 }
+
 
 
 def _expand_terms(query_list: list[str]) -> set[str]:

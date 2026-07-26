@@ -304,3 +304,30 @@ def test_assistant_service_process_chat_exposes_shortfall_message(db_session):
     assert res["playlist"]["found_length"] == 1
     assert "Found 1 high-quality match(es) matching your request (requested 25)." in res["message"]
 
+
+def test_intent_parser_descriptive_queries_map_to_generate_playlist():
+    """Verify that descriptive queries ('cute songs', 'sleepy songs', 'High energy songs') parse as generate_playlist."""
+    raw_cute = {
+        "plan": [{
+            "action": "generate_playlist",
+            "playlist_name": "Cute Songs",
+            "strategy": "automatic",
+            "filters": {"moods": ["cute"]},
+            "target_length": 25
+        }]
+    }
+    plan_cute = Planner.create_plan(raw_cute)
+    assert plan_cute.plan[0].action == "generate_playlist"
+    assert plan_cute.plan[0].filters["moods"] == ["cute"]
+
+    raw_search = {
+        "plan": [{
+            "action": "search_library",
+            "query": "Bohemian Rhapsody"
+        }]
+    }
+    plan_search = Planner.create_plan(raw_search)
+    assert plan_search.plan[0].action == "search_library"
+    assert plan_search.plan[0].query == "Bohemian Rhapsody"
+
+
