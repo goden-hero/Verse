@@ -1541,7 +1541,7 @@ function initAssistantEvents() {
   renderChatMessages();
 }
 
-async function sendAssistantPrompt(promptText, useCache = true) {
+async function sendAssistantPrompt(promptText) {
   const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   chatSessionHistory.push({
     sender: 'user',
@@ -1564,8 +1564,9 @@ async function sendAssistantPrompt(promptText, useCache = true) {
     const response = await fetch('/api/v1/assistant/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: promptText, use_cache: useCache })
+      body: JSON.stringify({ message: promptText })
     });
+
 
 
     chatSessionHistory = chatSessionHistory.filter(item => item.id !== loadingId);
@@ -1850,9 +1851,10 @@ function renderChatMessages() {
       const idx = parseInt(btn.getAttribute('data-chat-idx'));
       const item = chatSessionHistory[idx];
       const promptToRegen = item.originalPrompt || "Create a fresh music playlist";
-      sendAssistantPrompt(promptToRegen, false);
+      sendAssistantPrompt(promptToRegen);
     });
   });
+
 
 }
 

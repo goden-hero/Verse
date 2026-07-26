@@ -1,6 +1,8 @@
-"""AssistantService managing natural language prompt parsing and web assistant execution."""
-
 import logging
+import time
+import uuid
+from sqlalchemy.orm import Session
+
 from app.config.settings import settings
 from app.assistant import LLMParser, Planner
 from app.assistant.parser import (
@@ -22,7 +24,11 @@ class AssistantService:
     """Service handling assistant prompts and returning structured playlist responses."""
 
     @staticmethod
-    def process_chat(message: str, session: Session, use_cache: bool = True) -> dict:
+    def process_chat(
+        message: str,
+        session: Session,
+        request_id: str | None = None,
+    ) -> dict:
         """Parses user message via LLMParser and executes plan to return structured JSON."""
         clean_msg = message.strip()
         if not clean_msg:
@@ -33,23 +39,23 @@ class AssistantService:
                 "playlist": None,
             }
 
-        logger.info("\n=================== ASSISTANT TRACE MODE ===================")
-        logger.info("[TRACE] 1. REQUEST RECEIVED: '%s' (use_cache=%s)", clean_msg, use_cache)
+        req_id = request_id or uuid.uuid4().hex[:8]
+        t_start_total = time.perf_counter()
+
+        logger.info("\n=================== ASSISTANT TRACE MODE [%s] ===================", req_id)
+        logger.info("[%s] [TRACE] REQUEST RECEIVED: '%s'", req_id, clean_msg)
 
         # 1. Parse prompt into plan_dict using LLMParser
+        t_parser_start = time.perf_counter()
         try:
             parser = LLMParser()
-            if not use_cache:
-                try:
-                    plan_dict = parser.parse_intent(clean_msg, session, use_cache=False)
-                except TypeError:
-                    plan_dict = parser.parse_intent(clean_msg, session)
-            else:
-                plan_dict = parser.parse_intent(clean_msg, session)
-            logger.info("[TRACE] 7. PARSED ACTION PLAN JSON: %s", plan_dict)
+            plan_dict = parser.parse_intent(clean_msg, session, request_id=req_id)
+            t_parser_end = time.perf_counter()
+            parser_ms = int((t_parser_end - t_parser_start) * 1000)
+            logger.info("[%s] [TRACE] PARSED ACTION PLAN JSON: %s", req_id, plan_dict)
 
         except (LLMConnectionError, ConnectionError) as e:
-            logger.warning("[TRACE] FAIL: Ollama connection error: %s", e)
+            logger.warning("[%s] [TRACE] FAIL: Ollama connection error: %s", req_id, e)
             return {
                 "message": f"Could not connect to Ollama server ({settings.ollama_url}). Please ensure Ollama is running locally.",
                 "success": False,
@@ -58,7 +64,7 @@ class AssistantService:
             }
         except (LLMModelNotFoundError, ValueError) as e:
             if "Model" in str(e):
-                logger.warning("[TRACE] FAIL: Ollama model error: %s", e)
+                logger.warning("[%s] [TRACE] FAIL: Ollama model error: %s", req_id, e)
                 return {
                     "message": f"Ollama Model Error: {str(e)}",
                     "success": False,
@@ -67,7 +73,7 @@ class AssistantService:
                 }
             raise
         except LLMJSONDecodeError as e:
-            logger.error("[TRACE] FAIL: LLM JSON Decode Error: %s", e)
+            logger.error("[%s] [TRACE] FAIL: LLM JSON Decode Error: %s", req_id, e)
             return {
                 "message": f"LLM Output Format Error: {str(e)}",
                 "success": False,
@@ -75,7 +81,7 @@ class AssistantService:
                 "playlist": None,
             }
         except LLMSchemaValidationError as e:
-            logger.error("[TRACE] FAIL: LLM Schema Validation Error: %s", e)
+            logger.error("[%s] [TRACE] FAIL: LLM Schema Validation Error: %s", req_id, e)
             return {
                 "message": f"LLM Schema Validation Error: {str(e)}",
                 "success": False,
@@ -83,7 +89,7 @@ class AssistantService:
                 "playlist": None,
             }
         except Exception as e:
-            logger.error("[TRACE] FAIL: LLMParser unexpected error: %s", e)
+            logger.error("[%s] [TRACE] FAIL: LLMParser unexpected error: %s", req_id, e)
             return {
                 "message": f"Parsing Error: {str(e)}",
                 "success": False,
@@ -91,9 +97,8 @@ class AssistantService:
                 "playlist": None,
             }
 
-
         if not plan_dict or not plan_dict.get("plan"):
-            logger.info("[Assistant] Stage 2 - Empty ActionPlan generated for prompt: '%s'", clean_msg)
+            logger.info("[%s] [TRACE] Empty ActionPlan generated for prompt: '%s'", req_id, clean_msg)
             return {
                 "message": "I couldn't understand that request. Try asking for a mood, genre, or artist mix!",
                 "success": False,
@@ -102,11 +107,12 @@ class AssistantService:
             }
 
         # 2. Build validated ActionPlan
+        t_executor_start = time.perf_counter()
         try:
             action_plan = Planner.create_plan(plan_dict)
-            logger.info("[TRACE] 7. VALIDATED ACTION PLAN: %s", action_plan.model_dump())
+            logger.info("[%s] [TRACE] VALIDATED ACTION PLAN: %s", req_id, action_plan.model_dump())
         except Exception as e:
-            logger.error("[TRACE] FAIL: Planner schema validation failed: %s", e)
+            logger.error("[%s] [TRACE] FAIL: Planner schema validation failed: %s", req_id, e)
             return {
                 "message": f"Action Plan Validation Error: {str(e)}",
                 "success": False,
@@ -118,10 +124,11 @@ class AssistantService:
         steps_out = []
         playlist_preview = None
         main_playlist_title = f"{clean_msg.title()} Mix"
+        playlist_ms = 0
 
         for idx, action_item in enumerate(action_plan.plan):
             action_type = action_item.action
-            logger.info("[TRACE] 8. EXECUTING ACTION #%d: '%s' | %s", idx + 1, action_type, action_item)
+            logger.info("[%s] [TRACE] EXECUTING ACTION #%d: '%s' | %s", req_id, idx + 1, action_type, action_item)
             try:
                 out_songs = []
                 preview_details = None
@@ -130,7 +137,9 @@ class AssistantService:
                     main_playlist_title = action_item.playlist_name or main_playlist_title
                     strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
                     req_len = action_item.target_length or 25
-                    logger.info("[TRACE] 9. SERVICE INVOCATION: PlaylistService.generate_playlist_preview_details (strategy=%s, filters=%s, target_length=%d)", strategy_mapped, action_item.filters, req_len)
+                    
+                    t_pl_start = time.perf_counter()
+                    logger.info("[%s] [TRACE] SERVICE INVOCATION: PlaylistService.generate_playlist_preview_details (strategy=%s, filters=%s, target_length=%d)", req_id, strategy_mapped, action_item.filters, req_len)
                     preview_details = PlaylistService.generate_playlist_preview_details(
                         strategy=strategy_mapped,
                         filters=action_item.filters or {},
@@ -138,10 +147,11 @@ class AssistantService:
                         session=session,
                         name=main_playlist_title,
                     )
-                    out_songs = preview_details["songs"]
-                    logger.info("[TRACE] 10. FINAL RESULT: PlaylistService returned %d preview tracks (title: '%s')", len(out_songs), preview_details.get("name"))
-                    logger.info("============================================================\n")
+                    t_pl_end = time.perf_counter()
+                    playlist_ms = int((t_pl_end - t_pl_start) * 1000)
 
+                    out_songs = preview_details["songs"]
+                    logger.info("[%s] [TRACE] RESULT: PlaylistService returned %d preview tracks (title: '%s')", req_id, len(out_songs), preview_details.get("name"))
 
                 elif action_type == "semantic_search":
                     matches = SearchService.semantic_search(
@@ -165,7 +175,6 @@ class AssistantService:
                             limit=action_item.limit or 10,
                             session=session,
                         )
-
 
                 steps_out.append({
                     "action": action_type,
@@ -203,15 +212,24 @@ class AssistantService:
                             "songs": detailed_songs
                         }
 
-
             except Exception as step_err:
-                logger.error("Failed executing assistant step %s: %s", action_type, step_err)
+                logger.error("[%s] [TRACE] FAIL executing assistant step %s: %s", req_id, action_type, step_err)
                 steps_out.append({
                     "action": action_type,
                     "status": "error",
                     "output": None,
                     "error": str(step_err)
                 })
+
+        t_end_total = time.perf_counter()
+        executor_ms = int((t_end_total - t_executor_start) * 1000)
+        total_ms = int((t_end_total - t_start_total) * 1000)
+
+        logger.info(
+            "[%s] [TRACE] STAGE TIMINGS: Parser = %d ms | Executor = %d ms | Playlist = %d ms | Total = %d ms",
+            req_id, parser_ms, executor_ms, playlist_ms, total_ms
+        )
+        logger.info("============================================================\n")
 
         # 4. Construct natural conversational message response
         if playlist_preview:
@@ -241,14 +259,13 @@ class AssistantService:
             else:
                 msg_text = f"I executed your request for '{clean_msg}' and found {total_songs_found} matching tracks."
 
-        logger.info("[Assistant] Stage 5 - Final Message: '%s' | Playlist Preview Count: %d", msg_text, playlist_preview.get("songs_count", 0) if playlist_preview else 0)
-
         return {
             "message": msg_text,
             "success": True,
             "steps": steps_out,
             "playlist": playlist_preview if (playlist_preview and playlist_preview.get("songs_count", 0) > 0) else playlist_preview,
         }
+
 
 
 

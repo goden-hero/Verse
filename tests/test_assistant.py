@@ -7,12 +7,9 @@ import pytest
 from app.assistant.parser import LLMParser
 from app.assistant.planner import Planner
 from app.assistant.executor import Executor
-from app.assistant.cache import LLMCacheManager
-from app.assistant.prompts import PARSER_VERSION
-
 from app.assistant.history import AssistantHistoryManager
 from app.assistant.schemas import ActionPlan, PlaySong, Pause
-from app.database.models import LLMCache, AssistantHistory, Song
+from app.database.models import AssistantHistory, Song
 from app.ui.workers import AssistantWorker
 from app.services.playback import PlaybackService
 
@@ -33,23 +30,6 @@ def test_planner_validates_correct_schema():
     assert isinstance(plan.plan[1], Pause)
 
 
-def test_llm_cache_manager_hits(db_session):
-    """Verify LLMCacheManager caches and retrieves prompt responses."""
-    prompt = "Play some jazz"
-    response = '{"plan": [{"action": "pause"}]}'
-
-    # Miss first
-    val = LLMCacheManager.get_cached_response(prompt, db_session)
-    assert val is None
-
-    # Cache
-    LLMCacheManager.cache_response(prompt, response, db_session)
-
-    # Hit second
-    val = LLMCacheManager.get_cached_response(prompt, db_session)
-    assert val == response
-
-
 @patch("requests.post")
 def test_llm_parser_success(mock_post, db_session):
     """Verify LLMParser queries Ollama and validates standard plan JSON responses."""
@@ -68,9 +48,6 @@ def test_llm_parser_success(mock_post, db_session):
     assert res["plan"][0]["action"] == "play_song"
     assert res["plan"][0]["song_title"] == "Hey Jude"
 
-    # Verify cached
-    cached = LLMCacheManager.get_cached_response("play Hey Jude", db_session, parser_version=PARSER_VERSION, model="mock-model")
-    assert cached is not None
 
 
 
@@ -335,26 +312,28 @@ def test_intent_parser_descriptive_queries_map_to_generate_playlist():
     assert plan_search.plan[0].query == "Bohemian Rhapsody"
 
 
-def test_cache_versioning_and_invalidation(db_session):
-    """Verify that cache keying uses PARSER_VERSION and invalidates cleanly on version change."""
-    prompt = "cute songs"
-    model = "mistral"
-    response_v4 = '{"plan": [{"action": "generate_playlist", "playlist_name": "Cute Songs", "strategy": "automatic", "filters": {"moods": ["cute"]}, "target_length": 25}]}'
+@patch("requests.post")
+def test_stateless_parser_execution_duplication(mock_post, db_session):
+    """Verify sequential identical prompts execute Ollama requests fresh each time with zero caching."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "response": '{"plan": [{"action": "generate_playlist", "playlist_name": "Cute Songs", "strategy": "automatic", "filters": {"moods": ["cute"]}, "target_length": 25}]}'
+    }
+    mock_post.return_value = mock_resp
 
-    # 1. Miss initially
-    hit1 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="4", model=model)
-    assert hit1 is None
+    parser = LLMParser(api_url="http://mock-ollama/api/generate", model="mock-model", disable_health_check=True)
 
-    # 2. Store under v4
-    LLMCacheManager.cache_response(prompt, response_v4, db_session, parser_version="4", model=model)
+    # First execution
+    res1 = parser.parse_intent("cute songs", db_session)
+    # Second execution for identical prompt
+    res2 = parser.parse_intent("cute songs", db_session)
 
-    # 3. Hit under v4
-    hit2 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="4", model=model)
-    assert hit2 == response_v4
+    assert res1 is not None
+    assert res2 is not None
+    # Confirm Ollama was called twice independently
+    assert mock_post.call_count == 2
 
-    # 4. Miss when PARSER_VERSION changes to v5
-    hit3 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="5", model=model)
-    assert hit3 is None
 
 
 

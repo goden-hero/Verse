@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from app.config.settings import settings
 from app.assistant.schemas import ActionPlan
-from app.assistant.prompts import SYSTEM_PROMPT, RETRY_PROMPT_TEMPLATE, PARSER_VERSION
-from app.assistant.cache import LLMCacheManager
-
+from app.assistant.prompts import SYSTEM_PROMPT, RETRY_PROMPT_TEMPLATE
 from app.utils.ollama import resolve_ollama_model
+
+
 
 logger = logging.getLogger("music_rec.assistant.parser")
 
@@ -174,30 +174,18 @@ class LLMParser:
         LLMParser._health_checked = True
         LLMParser._is_healthy = True
 
-    def parse_intent(self, user_prompt: str, session: Session, max_retries: int = 3, use_cache: bool = True) -> dict | None:
-        """Parses the user prompt into a validated dictionary matching ActionPlan schema.
+    def parse_intent(
+        self,
+        user_prompt: str,
+        session: Session,
+        max_retries: int = 3,
+        request_id: str | None = None,
+    ) -> dict | None:
+        """Parses user prompt into validated dictionary matching ActionPlan schema.
 
-        Leverages SQLite cache when use_cache=True and implements error-aware retries for schema conformance.
+        Executes fresh against Ollama and implements error-aware retries for schema conformance.
         """
-        # 1. Check cache first if enabled
-        if use_cache:
-            cached = LLMCacheManager.get_cached_response(
-                prompt=user_prompt,
-                session=session,
-                parser_version=PARSER_VERSION,
-                model=self.model,
-            )
-            if cached:
-                try:
-                    parsed = json.loads(cached)
-                    # Ensure it still validates against the current schema
-                    ActionPlan.model_validate(parsed)
-                    logger.info("Retrieved valid ActionPlan from LLMCache for prompt: '%s'", user_prompt)
-                    return parsed
-                except Exception as e:
-                    logger.warning("Cached plan validation failed, recalculating: %s", e)
-
-
+        req_prefix = f"[{request_id}] " if request_id else ""
 
         # Verify connectivity and model availability before first request
         self.verify_health()
@@ -221,25 +209,12 @@ class LLMParser:
             }
 
             start_time_dt = datetime.now()
-            start_time_str = start_time_dt.isoformat()
             client_start = time.perf_counter()
-            
-            prompt_len = len(current_prompt)
-            approx_prompt_tokens = int(prompt_len / 4)
-            
-            success = False
-            error_msg = None
-            
-            ollama_total_sec = 0.0
-            ollama_load_sec = 0.0
-            ollama_prompt_eval_sec = 0.0
-            ollama_eval_sec = 0.0
-            prompt_eval_count = approx_prompt_tokens
-            eval_count = 0
 
             try:
                 logger.info(
-                    "[TRACE] 3. QUERYING OLLAMA (model: %s, attempt %d/%d)...",
+                    "%s[TRACE] QUERYING OLLAMA (model: %s, attempt %d/%d)...",
+                    req_prefix,
                     self.model,
                     attempt + 1,
                     max_retries,
@@ -251,12 +226,12 @@ class LLMParser:
                 )
                 
                 client_duration = time.perf_counter() - client_start
-                end_time_str = datetime.now().isoformat()
                 
                 if response.status_code != 200:
                     error_msg = f"API request failed (status {response.status_code}): {response.text}"
                     logger.warning(
-                        "LLM Parser API request failed (status %d) on attempt %d: %s",
+                        "%sLLM Parser API request failed (status %d) on attempt %d: %s",
+                        req_prefix,
                         response.status_code,
                         attempt + 1,
                         response.text,
@@ -274,40 +249,33 @@ class LLMParser:
                     response_text = data.get("thinking", "").strip()
 
                 logger.info(
-                    "[TRACE] 3. OLLAMA RAW OUTPUT (Attempt %d/%d):\n--- BEGIN RAW OUTPUT ---\n%s\n--- END RAW OUTPUT ---",
+                    "%s[TRACE] OLLAMA RAW OUTPUT (Attempt %d/%d):\n--- BEGIN RAW OUTPUT ---\n%s\n--- END RAW OUTPUT ---",
+                    req_prefix,
                     attempt + 1,
                     max_retries,
                     response_text,
                 )
 
                 if not response_text:
-                    error_msg = "Empty response received from parser"
-                    logger.warning("[TRACE] Empty response from parser on attempt %d.", attempt + 1)
+                    logger.warning("%s[TRACE] Empty response from parser on attempt %d.", req_prefix, attempt + 1)
                     continue
 
                 # 3. Parse and validate JSON
                 parsed_json = json.loads(response_text)
-                logger.info("[TRACE] 4. EXTRACTED JSON:\n%s", json.dumps(parsed_json, indent=2))
+                logger.info("%s[TRACE] EXTRACTED JSON:\n%s", req_prefix, json.dumps(parsed_json, indent=2))
 
                 # Validates against Pydantic ActionPlan model
                 ActionPlan.model_validate(parsed_json)
-                logger.info("[TRACE] 5. SCHEMA VALIDATION: PASS")
-                logger.info("[TRACE] 6. RETRY STATUS: Success on Attempt %d/%d", attempt + 1, max_retries)
+                logger.info("%s[TRACE] SCHEMA VALIDATION: PASS", req_prefix)
+                logger.info("%s[TRACE] RETRY STATUS: Success on Attempt %d/%d", req_prefix, attempt + 1, max_retries)
 
-                # Successful validation - write to cache and return
-                LLMCacheManager.cache_response(
-                    prompt=user_prompt,
-                    response=response_text,
-                    session=session,
-                    parser_version=PARSER_VERSION,
-                    model=self.model,
-                )
                 return parsed_json
 
             except ValidationError as e:
                 error_msg = f"Pydantic Validation Error: {str(e)}"
                 logger.warning(
-                    "[TRACE] 5. SCHEMA VALIDATION: FAIL (Attempt %d/%d): %s",
+                    "%s[TRACE] SCHEMA VALIDATION: FAIL (Attempt %d/%d): %s",
+                    req_prefix,
                     attempt + 1,
                     max_retries,
                     e,
@@ -336,7 +304,8 @@ class LLMParser:
             except json.JSONDecodeError as e:
                 error_msg = f"JSON Decode Error: {str(e)}"
                 logger.warning(
-                    "[TRACE] 4. JSON DECODE: FAIL (Attempt %d/%d): %s. Raw text: %s",
+                    "%s[TRACE] JSON DECODE: FAIL (Attempt %d/%d): %s. Raw text: %s",
+                    req_prefix,
                     attempt + 1,
                     max_retries,
                     e,
@@ -360,6 +329,7 @@ class LLMParser:
                     f"Assistant: {response_text}\n"
                     f"System: Your response was not valid JSON. Please return valid JSON matching the schema."
                 )
+
 
             except requests.exceptions.ConnectTimeout as e:
                 error_msg = f"Connection Timeout: {str(e)}"

@@ -106,7 +106,7 @@ def test_playback_history_endpoints(api_client, db_session):
 def test_assistant_chat_skeleton(api_client, monkeypatch):
     """Tests the assistant chat endpoint returns structured output."""
     from app.assistant import LLMParser
-    def mock_parse_intent(self, prompt, session):
+    def mock_parse_intent(self, prompt, session, *args, **kwargs):
         return {
             "intent": "search",
             "confidence": 0.9,
@@ -233,7 +233,7 @@ def test_assistant_chat_structured_response(api_client, db_session, monkeypatch)
 
     # Mock LLMParser to simulate intent parsing without needing a running Ollama server
     from app.assistant import LLMParser
-    def mock_parse_intent(self, prompt, session):
+    def mock_parse_intent(self, prompt, session, *args, **kwargs):
         return {
             "intent": "playlist_generation",
             "confidence": 0.95,
