@@ -19,7 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 class Settings:
     """Application settings class."""
 
+    PROJECT_ROOT: Path = PROJECT_ROOT
+
     # Database URL
+
     database_url: str = field(
         default_factory=lambda: os.getenv(
             "DATABASE_URL", f"sqlite:///{PROJECT_ROOT}/data/music_rec.db"

@@ -5,7 +5,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from app.database.models import Embeddings, AudioFeatures
 from app.search.index import FAISSIndex
-from app.config.settings import settings
+from app.config.settings import settings, PROJECT_ROOT
 
 logger = logging.getLogger("music_rec.recommendations.selector")
 
@@ -13,7 +13,8 @@ logger = logging.getLogger("music_rec.recommendations.selector")
 def is_vector_available(session: Session, vector_index_path: Path | str | None = None) -> bool:
     """Checks if the Vector recommendation engine is available and initialized."""
     if not vector_index_path:
-        vector_index_path = Path(settings.PROJECT_ROOT) / "data" / "vector_index.bin"
+        vector_index_path = Path(PROJECT_ROOT) / "data" / "vector_index.bin"
+
     path = Path(vector_index_path)
     if not path.exists():
         return False

@@ -87,11 +87,12 @@ class LibraryService:
     def scan_library(folder_path: str, session: Session) -> int:
         """Executes a library folder scanning task."""
         from app.ui.workers import ScanWorker
-        from app.config.settings import settings
+        from app.config.settings import settings, PROJECT_ROOT
         
         logger.info("Triggering scan on folder: %s", folder_path)
         # Run ScanWorker synchronously since we're already in a QThread background context
-        worker = ScanWorker(folder_path=folder_path, vector_index_path=settings.PROJECT_ROOT / "data" / "vector_index.bin")
+        worker = ScanWorker(folder_path=folder_path, vector_index_path=PROJECT_ROOT / "data" / "vector_index.bin")
+
         # Run it synchronously
         worker.run()
         return 0

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from sqlalchemy.orm import Session
-from app.config.settings import settings
+from app.config.settings import settings, PROJECT_ROOT
 from app.database.models import Song
 from app.recommendations.registry import get_recommender
 
@@ -20,7 +20,8 @@ class RecommendationService:
 
         # Inject default vector index paths dynamically for vector/hybrid strategies
         if strat in ["vector", "hybrid"]:
-            recommender.index_path = Path(settings.PROJECT_ROOT) / "data" / "vector_index.bin"
+            recommender.index_path = Path(PROJECT_ROOT) / "data" / "vector_index.bin"
+
             recommender.faiss_index = None
 
         results = recommender.recommend(song_id=song_id, limit=limit, db_session=session)

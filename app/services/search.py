@@ -4,7 +4,8 @@ import json
 import pickle
 from pathlib import Path
 from sqlalchemy.orm import Session
-from app.config.settings import settings
+from app.config.settings import settings, PROJECT_ROOT
+
 from app.database.models import Embeddings, Song, SemanticTags
 from app.search.index import FAISSIndex
 
@@ -136,7 +137,7 @@ class SearchService:
 
         try:
             vector = pickle.loads(emb.vector)
-            index_path = Path(settings.PROJECT_ROOT) / "data" / "vector_index.bin"
+            index_path = Path(PROJECT_ROOT) / "data" / "vector_index.bin"
             if not index_path.exists():
                 return []
             idx = FAISSIndex(index_path)
