@@ -18,7 +18,56 @@ from app.utils.ollama import resolve_ollama_model
 logger = logging.getLogger("music_rec.assistant.parser")
 
 
+class LLMParserError(Exception):
+    """Base exception for LLM Parser failures."""
+    pass
+
+class LLMConnectionError(LLMParserError, ConnectionError):
+    """Raised when Ollama server is unreachable."""
+    pass
+
+class LLMModelNotFoundError(LLMParserError, ValueError):
+    """Raised when specified Ollama model is missing."""
+    pass
+
+class LLMJSONDecodeError(LLMParserError, ValueError):
+    """Raised when LLM returns non-JSON or unparseable JSON text."""
+    pass
+
+class LLMSchemaValidationError(LLMParserError, ValueError):
+    """Raised when parsed JSON fails Pydantic ActionPlan validation."""
+    pass
+
+
+def _save_attempt_dumps(user_prompt: str, attempts: list[dict]) -> str | None:
+    """Saves attempt history (prompts, raw LLM outputs, errors) to project logs/assistant_dumps/."""
+    try:
+        from app.config.settings import PROJECT_ROOT
+        dump_dir = PROJECT_ROOT / "logs" / "assistant_dumps" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        dump_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, att in enumerate(attempts, 1):
+            file_path = dump_dir / f"attempt_{idx}.json"
+            dump_data = {
+                "user_prompt": user_prompt,
+                "attempt": idx,
+                "model": att.get("model"),
+                "raw_response": att.get("raw_response"),
+                "error": att.get("error"),
+                "timestamp": datetime.now().isoformat(),
+            }
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(dump_data, f, indent=2)
+
+        logger.info("[TRACE] Saved %d raw attempt dumps to: %s", len(attempts), dump_dir)
+        return str(dump_dir)
+    except Exception as e:
+        logger.warning("Failed to save attempt dumps: %s", e)
+        return None
+
+
 class LLMParser:
+
     """Interacts with local Ollama instance to translate text input into validated plans."""
 
     _health_checked = False
@@ -156,6 +205,7 @@ class LLMParser:
         # 2. Prepare payload for Ollama
         current_prompt = f"{SYSTEM_PROMPT}\nUser: {user_prompt}"
         response_text = ""
+        attempts_history = []
 
         for attempt in range(max_retries):
             payload = {
@@ -175,7 +225,6 @@ class LLMParser:
             client_start = time.perf_counter()
             
             prompt_len = len(current_prompt)
-            # Estimate tokens: ~4 chars per token is a standard rough heuristic
             approx_prompt_tokens = int(prompt_len / 4)
             
             success = False
@@ -190,7 +239,7 @@ class LLMParser:
 
             try:
                 logger.info(
-                    "Querying LLM Parser (model: %s, attempt %d/%d)...",
+                    "[TRACE] 3. QUERYING OLLAMA (model: %s, attempt %d/%d)...",
                     self.model,
                     attempt + 1,
                     max_retries,
@@ -213,41 +262,10 @@ class LLMParser:
                         response.text,
                     )
                     
-                    # Structured log output for HTTP error
-                    logger.info(
-                        "\nParser Request\n"
-                        "----------------------------\n"
-                        "Prompt length: %d chars (approx %d tokens)\n"
-                        "Model: %s\n"
-                        "Start time: %s\n"
-                        "End time: %s\n"
-                        "Client total duration: %.4f s\n"
-                        "Success/Failure: Failure\n"
-                        "Error (if any): %s\n"
-                        "----------------------------",
-                        prompt_len,
-                        approx_prompt_tokens,
-                        self.model,
-                        start_time_str,
-                        end_time_str,
-                        client_duration,
-                        error_msg
-                    )
-                    
                     if response.status_code == 404 and "not found" in response.text.lower():
-                        try:
-                            # Attempt to query available models to suggest to the user
-                            tags_url = self.api_url.replace("/generate", "").replace("/api/generate", "") + "/api/tags"
-                            tags_resp = requests.get(tags_url, timeout=5.0)
-                            if tags_resp.status_code == 200:
-                                models = [m.get("name") for m in tags_resp.json().get("models", [])]
-                                logger.error(
-                                    "Model '%s' not found. Installed local models: %s. "
-                                    "Please configure one of these models in the Settings tab.",
-                                    self.model, models
-                                )
-                        except Exception as tag_err:
-                            logger.debug("Failed to fetch available tags: %s", tag_err)
+                        raise LLMModelNotFoundError(
+                            f"Model '{self.model}' is not installed in Ollama. Please run 'ollama pull {self.model}' or change settings."
+                        )
                     continue
 
                 data = response.json()
@@ -255,99 +273,26 @@ class LLMParser:
                 if not response_text and "thinking" in data:
                     response_text = data.get("thinking", "").strip()
 
-                response_len = len(response_text)
-                
-                # Extract Ollama stats
-                total_duration = data.get("total_duration", 0)
-                load_duration = data.get("load_duration", 0)
-                prompt_eval_duration = data.get("prompt_eval_duration", 0)
-                eval_duration = data.get("eval_duration", 0)
-                
-                prompt_eval_count = data.get("prompt_eval_count", approx_prompt_tokens)
-                eval_count = data.get("eval_count", 0)
-                
-                ollama_total_sec = total_duration / 1e9
-                ollama_load_sec = load_duration / 1e9
-                ollama_prompt_eval_sec = prompt_eval_duration / 1e9
-                ollama_eval_sec = eval_duration / 1e9
-                network_overhead = max(0.0, client_duration - ollama_total_sec)
+                logger.info(
+                    "[TRACE] 3. OLLAMA RAW OUTPUT (Attempt %d/%d):\n--- BEGIN RAW OUTPUT ---\n%s\n--- END RAW OUTPUT ---",
+                    attempt + 1,
+                    max_retries,
+                    response_text,
+                )
 
                 if not response_text:
                     error_msg = "Empty response received from parser"
-                    logger.warning("Empty response from parser on attempt %d.", attempt + 1)
-                    
-                    # Structured log output for empty response
-                    logger.info(
-                        "\nParser Request\n"
-                        "----------------------------\n"
-                        "Prompt length: %d chars (approx %d tokens)\n"
-                        "Model: %s\n"
-                        "Start time: %s\n"
-                        "End time: %s\n"
-                        "Client total duration: %.4f s\n"
-                        "Ollama total duration: %.4f s\n"
-                        "  - Connection/Network overhead: %.4f s\n"
-                        "  - Model load duration: %.4f s\n"
-                        "  - Prompt evaluation duration: %.4f s\n"
-                        "  - Token generation duration: %.4f s\n"
-                        "Success/Failure: Failure\n"
-                        "Error (if any): %s\n"
-                        "----------------------------",
-                        prompt_len,
-                        prompt_eval_count,
-                        self.model,
-                        start_time_str,
-                        end_time_str,
-                        client_duration,
-                        ollama_total_sec,
-                        network_overhead,
-                        ollama_load_sec,
-                        ollama_prompt_eval_sec,
-                        ollama_eval_sec,
-                        error_msg
-                    )
+                    logger.warning("[TRACE] Empty response from parser on attempt %d.", attempt + 1)
                     continue
 
                 # 3. Parse and validate JSON
                 parsed_json = json.loads(response_text)
+                logger.info("[TRACE] 4. EXTRACTED JSON:\n%s", json.dumps(parsed_json, indent=2))
+
                 # Validates against Pydantic ActionPlan model
                 ActionPlan.model_validate(parsed_json)
-
-                success = True
-                
-                # Structured log output for success
-                logger.info(
-                    "\nParser Request\n"
-                    "----------------------------\n"
-                    "Prompt length: %d chars (approx %d tokens)\n"
-                    "Model: %s\n"
-                    "Start time: %s\n"
-                    "End time: %s\n"
-                    "Client total duration: %.4f s\n"
-                    "Ollama total duration: %.4f s\n"
-                    "  - Connection/Network overhead: %.4f s\n"
-                    "  - Model load duration: %.4f s\n"
-                    "  - Prompt evaluation duration: %.4f s\n"
-                    "  - Token generation duration: %.4f s\n"
-                    "Response tokens: %d tokens\n"
-                    "Response length: %d chars\n"
-                    "Success/Failure: Success\n"
-                    "Error (if any): None\n"
-                    "----------------------------",
-                    prompt_len,
-                    prompt_eval_count,
-                    self.model,
-                    start_time_str,
-                    end_time_str,
-                    client_duration,
-                    ollama_total_sec,
-                    network_overhead,
-                    ollama_load_sec,
-                    ollama_prompt_eval_sec,
-                    ollama_eval_sec,
-                    eval_count,
-                    response_len
-                )
+                logger.info("[TRACE] 5. SCHEMA VALIDATION: PASS")
+                logger.info("[TRACE] 6. RETRY STATUS: Success on Attempt %d/%d", attempt + 1, max_retries)
 
                 # Successful validation - write to cache and return
                 LLMCacheManager.cache_response(
@@ -359,37 +304,27 @@ class LLMParser:
                 )
                 return parsed_json
 
-
             except ValidationError as e:
                 error_msg = f"Pydantic Validation Error: {str(e)}"
                 logger.warning(
-                    "Pydantic Validation failed on attempt %d: %s. Response was: %s",
+                    "[TRACE] 5. SCHEMA VALIDATION: FAIL (Attempt %d/%d): %s",
                     attempt + 1,
+                    max_retries,
                     e,
-                    response_text,
                 )
+                attempts_history.append({
+                    "model": self.model,
+                    "raw_response": response_text,
+                    "error": error_msg,
+                })
                 
-                # Log structured failure
-                logger.info(
-                    "\nParser Request\n"
-                    "----------------------------\n"
-                    "Prompt length: %d chars (approx %d tokens)\n"
-                    "Model: %s\n"
-                    "Start time: %s\n"
-                    "End time: %s\n"
-                    "Client total duration: %.4f s\n"
-                    "Success/Failure: Failure\n"
-                    "Error (if any): %s\n"
-                    "----------------------------",
-                    prompt_len,
-                    prompt_eval_count,
-                    self.model,
-                    start_time_str,
-                    datetime.now().isoformat(),
-                    time.perf_counter() - client_start,
-                    error_msg
-                )
-                
+                if attempt == max_retries - 1:
+                    dump_path = _save_attempt_dumps(user_prompt, attempts_history)
+                    raise LLMSchemaValidationError(
+                        f"Generated JSON failed schema validation after {max_retries} attempts: {str(e)}"
+                        + (f" (Raw outputs saved to {dump_path})" if dump_path else "")
+                    ) from e
+
                 # Construct error-aware retry prompt
                 error_details = str(e)
                 retry_instruct = RETRY_PROMPT_TEMPLATE.format(error_details=error_details)
@@ -400,34 +335,32 @@ class LLMParser:
                 )
             except json.JSONDecodeError as e:
                 error_msg = f"JSON Decode Error: {str(e)}"
-                logger.warning("JSON decode failure on attempt %d: %s. Content: %s", attempt + 1, e, response_text)
-                
-                # Log structured failure
-                logger.info(
-                    "\nParser Request\n"
-                    "----------------------------\n"
-                    "Prompt length: %d chars (approx %d tokens)\n"
-                    "Model: %s\n"
-                    "Start time: %s\n"
-                    "End time: %s\n"
-                    "Client total duration: %.4f s\n"
-                    "Success/Failure: Failure\n"
-                    "Error (if any): %s\n"
-                    "----------------------------",
-                    prompt_len,
-                    prompt_eval_count,
-                    self.model,
-                    start_time_str,
-                    datetime.now().isoformat(),
-                    time.perf_counter() - client_start,
-                    error_msg
+                logger.warning(
+                    "[TRACE] 4. JSON DECODE: FAIL (Attempt %d/%d): %s. Raw text: %s",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                    response_text,
                 )
-                
+                attempts_history.append({
+                    "model": self.model,
+                    "raw_response": response_text,
+                    "error": error_msg,
+                })
+
+                if attempt == max_retries - 1:
+                    dump_path = _save_attempt_dumps(user_prompt, attempts_history)
+                    raise LLMJSONDecodeError(
+                        f"Ollama output was not valid JSON after {max_retries} attempts: {str(e)}"
+                        + (f" (Raw outputs saved to {dump_path})" if dump_path else "")
+                    ) from e
+
                 current_prompt = (
                     f"{SYSTEM_PROMPT}\nUser: {user_prompt}\n"
                     f"Assistant: {response_text}\n"
                     f"System: Your response was not valid JSON. Please return valid JSON matching the schema."
                 )
+
             except requests.exceptions.ConnectTimeout as e:
                 error_msg = f"Connection Timeout: {str(e)}"
                 logger.error("Connection timeout to Ollama parser on attempt %d: %s", attempt + 1, e)

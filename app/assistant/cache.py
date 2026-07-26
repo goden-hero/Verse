@@ -44,11 +44,12 @@ class LLMCacheManager:
                 cache_entry.usage_count = (cache_entry.usage_count or 1) + 1
             session.commit()
 
-            logger.info("LLM Cache HIT for hash %s (version: %s, model: %s)", prompt_hash, parser_version, model)
+            logger.info("[TRACE] 2. CACHE HIT for hash %s (key: '%s')", prompt_hash, full_key)
             return cache_entry.response
 
-        logger.info("LLM Cache MISS for hash %s (version: %s, model: %s)", prompt_hash, parser_version, model)
+        logger.info("[TRACE] 2. CACHE MISS for hash %s (key: '%s')", prompt_hash, full_key)
         return None
+
 
     @staticmethod
     def cache_response(

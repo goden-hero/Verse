@@ -76,6 +76,12 @@ class Settings:
         default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "20m")
     )
 
+    # Enable Assistant Trace Mode & detailed diagnostic logging
+    debug_assistant: bool = field(
+        default_factory=lambda: os.getenv("DEBUG_ASSISTANT", "true").lower() in ("true", "1", "yes")
+    )
+
+
 
 # Global settings instance
 settings = Settings()

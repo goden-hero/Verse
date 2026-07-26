@@ -1,8 +1,14 @@
 """AssistantService managing natural language prompt parsing and web assistant execution."""
 
 import logging
-from sqlalchemy.orm import Session
+from app.config.settings import settings
 from app.assistant import LLMParser, Planner
+from app.assistant.parser import (
+    LLMConnectionError,
+    LLMModelNotFoundError,
+    LLMJSONDecodeError,
+    LLMSchemaValidationError,
+)
 from app.services.playlist import PlaylistService
 from app.services.search import SearchService
 from app.services.library import LibraryService
@@ -10,7 +16,6 @@ from app.services.recommendation import RecommendationService
 from app.recommendations.selector import map_ui_to_backend_strategy
 
 logger = logging.getLogger("music_rec.services.assistant")
-
 
 
 class AssistantService:
@@ -28,7 +33,8 @@ class AssistantService:
                 "playlist": None,
             }
 
-        logger.info("[Assistant] Stage 1 - User Input: '%s' (use_cache=%s)", clean_msg, use_cache)
+        logger.info("\n=================== ASSISTANT TRACE MODE ===================")
+        logger.info("[TRACE] 1. REQUEST RECEIVED: '%s' (use_cache=%s)", clean_msg, use_cache)
 
         # 1. Parse prompt into plan_dict using LLMParser
         try:
@@ -40,32 +46,51 @@ class AssistantService:
                     plan_dict = parser.parse_intent(clean_msg, session)
             else:
                 plan_dict = parser.parse_intent(clean_msg, session)
-            logger.info("[Assistant] Stage 2 - Parsed Raw ActionPlan JSON: %s", plan_dict)
+            logger.info("[TRACE] 7. PARSED ACTION PLAN JSON: %s", plan_dict)
 
-        except ConnectionError as e:
-            logger.warning("Ollama connection error: %s", e)
+        except (LLMConnectionError, ConnectionError) as e:
+            logger.warning("[TRACE] FAIL: Ollama connection error: %s", e)
             return {
-                "message": "Could not connect to Ollama server. Please ensure Ollama is running locally.",
+                "message": f"Could not connect to Ollama server ({settings.ollama_url}). Please ensure Ollama is running locally.",
                 "success": False,
                 "steps": [],
                 "playlist": None,
             }
-        except ValueError as e:
-            logger.warning("Ollama model error: %s", e)
+        except (LLMModelNotFoundError, ValueError) as e:
+            if "Model" in str(e):
+                logger.warning("[TRACE] FAIL: Ollama model error: %s", e)
+                return {
+                    "message": f"Ollama Model Error: {str(e)}",
+                    "success": False,
+                    "steps": [],
+                    "playlist": None,
+                }
+            raise
+        except LLMJSONDecodeError as e:
+            logger.error("[TRACE] FAIL: LLM JSON Decode Error: %s", e)
             return {
-                "message": f"Ollama model error: {str(e)}",
+                "message": f"LLM Output Format Error: {str(e)}",
+                "success": False,
+                "steps": [],
+                "playlist": None,
+            }
+        except LLMSchemaValidationError as e:
+            logger.error("[TRACE] FAIL: LLM Schema Validation Error: %s", e)
+            return {
+                "message": f"LLM Schema Validation Error: {str(e)}",
                 "success": False,
                 "steps": [],
                 "playlist": None,
             }
         except Exception as e:
-            logger.error("LLMParser unexpected error: %s", e)
+            logger.error("[TRACE] FAIL: LLMParser unexpected error: %s", e)
             return {
-                "message": "Failed to parse natural language intent. Please try rephrasing your request.",
+                "message": f"Parsing Error: {str(e)}",
                 "success": False,
                 "steps": [],
                 "playlist": None,
             }
+
 
         if not plan_dict or not plan_dict.get("plan"):
             logger.info("[Assistant] Stage 2 - Empty ActionPlan generated for prompt: '%s'", clean_msg)
@@ -79,13 +104,11 @@ class AssistantService:
         # 2. Build validated ActionPlan
         try:
             action_plan = Planner.create_plan(plan_dict)
-            logger.info("ActionPlan: %s", action_plan.model_dump())
-            logger.info("[Assistant] Stage 3 - Validated ActionPlan objects: %s", action_plan)
+            logger.info("[TRACE] 7. VALIDATED ACTION PLAN: %s", action_plan.model_dump())
         except Exception as e:
-
-            logger.error("Planner schema validation failed: %s", e)
+            logger.error("[TRACE] FAIL: Planner schema validation failed: %s", e)
             return {
-                "message": "Failed to validate action plan schemas.",
+                "message": f"Action Plan Validation Error: {str(e)}",
                 "success": False,
                 "steps": [],
                 "playlist": None,
@@ -98,7 +121,7 @@ class AssistantService:
 
         for idx, action_item in enumerate(action_plan.plan):
             action_type = action_item.action
-            logger.info("[Assistant] Stage 4 - Executing Step #%d Action: '%s' | Item: %s", idx + 1, action_type, action_item)
+            logger.info("[TRACE] 8. EXECUTING ACTION #%d: '%s' | %s", idx + 1, action_type, action_item)
             try:
                 out_songs = []
                 preview_details = None
@@ -107,7 +130,7 @@ class AssistantService:
                     main_playlist_title = action_item.playlist_name or main_playlist_title
                     strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
                     req_len = action_item.target_length or 25
-                    logger.info("[Assistant] Executing generate_playlist preview (strategy: %s, filters: %s, target_length: %d)", strategy_mapped, action_item.filters, req_len)
+                    logger.info("[TRACE] 9. SERVICE INVOCATION: PlaylistService.generate_playlist_preview_details (strategy=%s, filters=%s, target_length=%d)", strategy_mapped, action_item.filters, req_len)
                     preview_details = PlaylistService.generate_playlist_preview_details(
                         strategy=strategy_mapped,
                         filters=action_item.filters or {},
@@ -116,7 +139,9 @@ class AssistantService:
                         name=main_playlist_title,
                     )
                     out_songs = preview_details["songs"]
-                    logger.info("[Assistant] PlaylistService returned %d preview tracks (title: '%s')", len(out_songs), preview_details.get("name"))
+                    logger.info("[TRACE] 10. FINAL RESULT: PlaylistService returned %d preview tracks (title: '%s')", len(out_songs), preview_details.get("name"))
+                    logger.info("============================================================\n")
+
 
                 elif action_type == "semantic_search":
                     matches = SearchService.semantic_search(
