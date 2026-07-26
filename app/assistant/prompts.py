@@ -1,6 +1,9 @@
 """LLM Prompts and instructions for agent orchestration parsing."""
 
+PARSER_VERSION = "4"
+
 SYSTEM_PROMPT = """Identity:
+
 You are Verse's Intent Parser.
 Your only responsibility is to convert a user's request into a valid ActionPlan JSON.
 

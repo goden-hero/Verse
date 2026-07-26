@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from pydantic import ValidationError
 from app.config.settings import settings
 from app.assistant.schemas import ActionPlan
-from app.assistant.prompts import SYSTEM_PROMPT, RETRY_PROMPT_TEMPLATE
+from app.assistant.prompts import SYSTEM_PROMPT, RETRY_PROMPT_TEMPLATE, PARSER_VERSION
 from app.assistant.cache import LLMCacheManager
+
 from app.utils.ollama import resolve_ollama_model
 
 logger = logging.getLogger("music_rec.assistant.parser")
@@ -131,7 +132,12 @@ class LLMParser:
         """
         # 1. Check cache first if enabled
         if use_cache:
-            cached = LLMCacheManager.get_cached_response(user_prompt, session)
+            cached = LLMCacheManager.get_cached_response(
+                prompt=user_prompt,
+                session=session,
+                parser_version=PARSER_VERSION,
+                model=self.model,
+            )
             if cached:
                 try:
                     parsed = json.loads(cached)
@@ -141,6 +147,7 @@ class LLMParser:
                     return parsed
                 except Exception as e:
                     logger.warning("Cached plan validation failed, recalculating: %s", e)
+
 
 
         # Verify connectivity and model availability before first request
@@ -343,8 +350,15 @@ class LLMParser:
                 )
 
                 # Successful validation - write to cache and return
-                LLMCacheManager.cache_response(user_prompt, response_text, session)
+                LLMCacheManager.cache_response(
+                    prompt=user_prompt,
+                    response=response_text,
+                    session=session,
+                    parser_version=PARSER_VERSION,
+                    model=self.model,
+                )
                 return parsed_json
+
 
             except ValidationError as e:
                 error_msg = f"Pydantic Validation Error: {str(e)}"

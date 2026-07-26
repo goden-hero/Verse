@@ -67,8 +67,9 @@ def test_llm_parser_success(mock_post, db_session):
     assert res["plan"][0]["song_title"] == "Hey Jude"
 
     # Verify cached
-    cached = LLMCacheManager.get_cached_response("play Hey Jude", db_session)
+    cached = LLMCacheManager.get_cached_response("play Hey Jude", db_session, model="mock-model")
     assert cached is not None
+
 
 
 @patch("requests.post")
@@ -329,5 +330,28 @@ def test_intent_parser_descriptive_queries_map_to_generate_playlist():
     plan_search = Planner.create_plan(raw_search)
     assert plan_search.plan[0].action == "search_library"
     assert plan_search.plan[0].query == "Bohemian Rhapsody"
+
+
+def test_cache_versioning_and_invalidation(db_session):
+    """Verify that cache keying uses PARSER_VERSION and invalidates cleanly on version change."""
+    prompt = "cute songs"
+    model = "mistral"
+    response_v4 = '{"plan": [{"action": "generate_playlist", "playlist_name": "Cute Songs", "strategy": "automatic", "filters": {"moods": ["cute"]}, "target_length": 25}]}'
+
+    # 1. Miss initially
+    hit1 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="4", model=model)
+    assert hit1 is None
+
+    # 2. Store under v4
+    LLMCacheManager.cache_response(prompt, response_v4, db_session, parser_version="4", model=model)
+
+    # 3. Hit under v4
+    hit2 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="4", model=model)
+    assert hit2 == response_v4
+
+    # 4. Miss when PARSER_VERSION changes to v5
+    hit3 = LLMCacheManager.get_cached_response(prompt, db_session, parser_version="5", model=model)
+    assert hit3 is None
+
 
 

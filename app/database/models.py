@@ -298,11 +298,22 @@ class LLMCache(Base):
     __tablename__ = "llm_cache"
 
     prompt_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    prompt: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(String, nullable=True)
     response: Mapped[str] = mapped_column(String, nullable=False)  # JSON-encoded response
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    usage_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     def __repr__(self) -> str:
-        return f"<LLMCache(prompt_hash='{self.prompt_hash[:10]}...', created_at={self.created_at})>"
+        return (
+            f"<LLMCache(prompt_hash='{self.prompt_hash[:10]}...', version='{self.parser_version}', "
+            f"usage={self.usage_count}, created_at={self.created_at})>"
+        )
+
 
