@@ -79,8 +79,10 @@ class AssistantService:
         # 2. Build validated ActionPlan
         try:
             action_plan = Planner.create_plan(plan_dict)
+            logger.info("ActionPlan: %s", action_plan.model_dump())
             logger.info("[Assistant] Stage 3 - Validated ActionPlan objects: %s", action_plan)
         except Exception as e:
+
             logger.error("Planner schema validation failed: %s", e)
             return {
                 "message": "Failed to validate action plan schemas.",

@@ -314,6 +314,35 @@ def _retrieve_initial_candidates(filters: dict, session: Session) -> list[Playli
     return _dedupe_candidates(_score_candidate_confidences(candidates, filters, session))
 
 
+def _retrieve_fallback_seeds(filters: dict, session: Session) -> list[PlaylistCandidate]:
+    """Retrieves fallback seeds from metadata search or general library when exact tag matches are 0."""
+    candidates = []
+    moods = filters.get("moods", [])
+    activities = filters.get("activities", [])
+    seed_title = filters.get("seed_song_title")
+    terms = [*moods, *activities]
+    if seed_title:
+        terms.append(seed_title)
+
+    for term in terms:
+        clean_term = term.strip().lower()
+        if clean_term:
+            matches = SearchService.ranked_metadata_search(query=clean_term, session=session)
+            candidates.extend(
+                PlaylistCandidate(song_id=m["id"], source="semantic", confidence=0.80)
+                for m in matches[:5]
+            )
+
+    if not candidates:
+        songs = session.query(Song).limit(5).all()
+        candidates.extend(
+            PlaylistCandidate(song_id=s.id, source="semantic", confidence=0.75)
+            for s in songs
+        )
+
+    return _dedupe_candidates(candidates)
+
+
 def _expand_candidates_from_recommendations(
     seeds: list[PlaylistCandidate],
     strategy: str,
@@ -321,7 +350,7 @@ def _expand_candidates_from_recommendations(
     target_length: int,
     session: Session,
 ) -> list[PlaylistCandidate]:
-    """Expands from the strongest direct matches and keeps only semantically valid recs."""
+    """Expands from the strongest direct matches and keeps semantically valid recs (or expanded recs if tags sparse)."""
     if not seeds:
         return []
 
@@ -352,6 +381,10 @@ def _expand_candidates_from_recommendations(
             )
 
     validated_candidates = _validate_candidates_semantically(expanded, filters, session)
+    if not validated_candidates and expanded:
+        # If strict tag matching returns empty because tags are sparse, keep expanded recs
+        validated_candidates = expanded
+
     scored_candidates = _score_candidate_confidences(validated_candidates, filters, session)
     return _dedupe_candidates(scored_candidates)
 
@@ -368,15 +401,22 @@ def _construct_playlist_candidates(
 
     strategy = map_ui_to_backend_strategy(strategy, session)
 
-
     initial_candidates = _validate_candidates_semantically(
         _retrieve_initial_candidates(filters, session),
         filters,
         session,
     )
+    logger.info("[PlaylistService] Direct semantic seeds found: %d matches", len(initial_candidates))
+
+    if not initial_candidates:
+        fallback_seeds = _retrieve_fallback_seeds(filters, session)
+        logger.info("[PlaylistService] Using fallback seeds: %d candidates", len(fallback_seeds))
+        initial_candidates = fallback_seeds
+
     if len(initial_candidates) >= target_length:
         ranked_candidates = _rank_candidates(initial_candidates, session)
         confident_candidates = _apply_confidence_threshold(ranked_candidates)
+        logger.info("[PlaylistService] Direct matches sufficient: returning %d tracks", len(confident_candidates[:target_length]))
         return confident_candidates[:target_length]
 
     expanded_candidates = _expand_candidates_from_recommendations(
@@ -386,10 +426,14 @@ def _construct_playlist_candidates(
         target_length=target_length,
         session=session,
     )
+    logger.info("[PlaylistService] Expanded recommendation candidates: %d matches", len(expanded_candidates))
+
     candidates = _dedupe_candidates([*initial_candidates, *expanded_candidates])
     ranked_candidates = _rank_candidates(candidates, session)
     confident_candidates = _apply_confidence_threshold(ranked_candidates)
+    logger.info("[PlaylistService] Final candidates after ranking: %d matches", len(confident_candidates[:target_length]))
     return confident_candidates[:target_length]
+
 
 
 class PlaylistService:

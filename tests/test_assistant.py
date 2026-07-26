@@ -8,6 +8,8 @@ from app.assistant.parser import LLMParser
 from app.assistant.planner import Planner
 from app.assistant.executor import Executor
 from app.assistant.cache import LLMCacheManager
+from app.assistant.prompts import PARSER_VERSION
+
 from app.assistant.history import AssistantHistoryManager
 from app.assistant.schemas import ActionPlan, PlaySong, Pause
 from app.database.models import LLMCache, AssistantHistory, Song
@@ -67,8 +69,9 @@ def test_llm_parser_success(mock_post, db_session):
     assert res["plan"][0]["song_title"] == "Hey Jude"
 
     # Verify cached
-    cached = LLMCacheManager.get_cached_response("play Hey Jude", db_session, model="mock-model")
+    cached = LLMCacheManager.get_cached_response("play Hey Jude", db_session, parser_version=PARSER_VERSION, model="mock-model")
     assert cached is not None
+
 
 
 
