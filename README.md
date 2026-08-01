@@ -159,42 +159,63 @@ alembic upgrade head
 
 The application can be driven via command-line arguments or using the Desktop GUI.
 
-### Launching the Desktop GUI
+> **Note on Python binary**: Use `.venv/bin/python` (or `python3` if your virtual environment is active) to ensure the command uses the virtual environment dependencies.
+
+### Scanning the Music Library
+
+#### 1. Via Command Line (CLI)
+Recursively scan and index a local music directory (extracts technical metadata, librosa audio descriptors, OpenL3/fallback vector embeddings, and updates the FAISS search index):
 ```bash
-python -m app.main gui
+.venv/bin/python -m app.main scan /path/to/your/music/folder
 ```
 
+#### 2. Via Desktop GUI
+1. Launch the Desktop GUI:
+   ```bash
+   .venv/bin/python -m app.main gui
+   ```
+2. Navigate to the **Library** tab.
+3. Click **Scan Music Folder**, select your audio folder (`.mp3`, `.flac`, `.wav`, `.m4a`, `.ogg`), and wait for indexing to complete.
+
+---
+
+### Other Commands & Operations
+
+- **Launch the Desktop GUI:**
+  ```bash
+  .venv/bin/python -m app.main gui
+  ```
 - **View or set the project LLM model:**
   ```bash
   # Check current LLM model and local Ollama status
-  python -m app.main get-model
+  .venv/bin/python -m app.main get-model
 
   # Change and persist the LLM model for the entire project
-  python -m app.main set-model llama3
+  .venv/bin/python -m app.main set-model llama3
 
   # Alternative config syntax
-  python -m app.main config set-model llama3:latest
+  .venv/bin/python -m app.main config set-model llama3:latest
   ```
 - **Override model for a single CLI command:**
   ```bash
-  python -m app.main --model llama3 enrich-semantic
+  .venv/bin/python -m app.main --model llama3 enrich-semantic
   ```
 - **Enrich song metadata semantics:**
   ```bash
-  python -m app.main enrich-semantic [--force] [--limit <count>]
+  .venv/bin/python -m app.main enrich-semantic [--force] [--limit <count>]
   ```
 - **Record listening stats:**
   ```bash
-  python -m app.main play <song_id> [--duration <seconds>]
-  python -m app.main skip <song_id>
+  .venv/bin/python -m app.main play <song_id> [--duration <seconds>]
+  .venv/bin/python -m app.main skip <song_id>
   ```
 - **Like or unlike a song:**
   ```bash
-  python -m app.main like <song_id> [--unlike]
+  .venv/bin/python -m app.main like <song_id> [--unlike]
   ```
 - **Display song listening history:**
   ```bash
-  python -m app.main show-history <song_id>
+  .venv/bin/python -m app.main show-history <song_id>
   ```
 
 

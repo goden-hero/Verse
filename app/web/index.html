@@ -343,16 +343,24 @@
       <!-- View: Playlist Details -->
       <section class="content-view" id="view-playlist-detail">
         <div class="playlist-detail-container">
-          <!-- Back button -->
-          <button class="back-nav-btn" id="btn-playlist-back">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="19" y1="12" x2="5" y2="12"/>
-              <polyline points="12 19 5 12 12 5"/>
-            </svg>
-            <span>Back</span>
-          </button>
+          <!-- Top Navigation Header Bar -->
+          <div class="playlist-detail-top-bar">
+            <button class="back-nav-btn" id="btn-playlist-back">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"/>
+                <polyline points="12 19 5 12 12 5"/>
+              </svg>
+              <span>Back</span>
+            </button>
 
-          <!-- Hero Section -->
+            <button class="playlist-top-more-btn" id="btn-playlist-top-more" title="More Options">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Hero Header Section -->
           <div class="playlist-detail-hero">
             <div class="playlist-cover-large-wrapper">
               <img id="detail-playlist-cover" class="playlist-cover-large-img" src="" alt="Playlist Cover">
@@ -360,21 +368,22 @@
             
             <div class="playlist-hero-info">
               <div class="playlist-badge-row">
-                <span class="badge-type" id="detail-playlist-badge">PLAYLIST</span>
-                <span class="badge-ai" id="detail-playlist-ai-badge" style="display:none;">AI MIX</span>
+                <span class="badge-type" id="detail-playlist-badge">PUBLIC PLAYLIST</span>
               </div>
               
               <h1 class="playlist-hero-title" id="detail-playlist-title">Playlist Title</h1>
               <p class="playlist-hero-desc" id="detail-playlist-desc"></p>
               
-              <div class="playlist-hero-stats">
+              <div class="playlist-creator-row">
+                <div class="creator-avatar" id="detail-creator-avatar">V</div>
+                <span class="creator-name" id="detail-creator-name">Verse AI</span>
+                <span class="stat-divider">•</span>
                 <span class="stat-highlight" id="detail-song-count">0 songs</span>
                 <span class="stat-divider">•</span>
                 <span id="detail-total-duration">0 min</span>
                 <span class="stat-divider">•</span>
                 <span id="detail-created-date">Created</span>
-                <span class="stat-divider">•</span>
-                <span id="detail-play-count">0 plays</span>
+                <span class="badge-strategy" id="detail-strategy-badge" style="display:none;">Hybrid</span>
               </div>
 
               <!-- AI Generation Metadata Box -->
@@ -396,27 +405,66 @@
             </div>
           </div>
 
-          <!-- Controls / Action Row -->
+          <!-- Playlist Action Toolbar -->
           <div class="playlist-detail-actions">
-            <button class="playlist-play-main-btn" id="btn-playlist-play-all">
+            <button class="playlist-play-main-btn" id="btn-playlist-play-all" title="Play All">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-              <span>Play</span>
             </button>
 
-            <button class="playlist-action-secondary-btn" id="btn-playlist-shuffle">
+            <button class="playlist-action-icon-btn" id="btn-playlist-shuffle" title="Shuffle Playback">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
                 <polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
                 <line x1="4" y1="4" x2="9" y2="9"/>
               </svg>
-              <span>Shuffle</span>
             </button>
 
-            <button class="playlist-action-icon-btn" id="btn-playlist-delete" title="Delete Playlist">
+            <button class="playlist-action-icon-btn" id="btn-playlist-download" title="Download Playlist">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
               </svg>
             </button>
+
+            <button class="playlist-action-icon-btn" id="btn-playlist-favorite" title="Add to Library">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+            </button>
+
+            <button class="playlist-action-icon-btn" id="btn-playlist-delete" title="More Options">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Song Table Header Controls -->
+          <div class="playlist-table-controls-row">
+            <div class="playlist-table-search-box">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" class="playlist-table-search-input" id="playlist-table-search" placeholder="Search within playlist...">
+            </div>
+
+            <div class="playlist-table-right-controls">
+              <select class="playlist-sort-select" id="playlist-table-sort">
+                <option value="position">Custom Order</option>
+                <option value="title">Title</option>
+                <option value="artist">Artist</option>
+                <option value="album">Album</option>
+                <option value="date_added">Date Added</option>
+                <option value="duration">Duration</option>
+              </select>
+
+              <button class="playlist-view-opts-btn" id="btn-playlist-view-options" title="View Options">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+                  <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+                  <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Song Table -->
@@ -429,6 +477,7 @@
                   <th class="col-title">TITLE</th>
                   <th class="col-artist">ARTIST</th>
                   <th class="col-album">ALBUM</th>
+                  <th class="col-date-added">DATE ADDED</th>
                   <th class="col-duration">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="clock-icon">
                       <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>

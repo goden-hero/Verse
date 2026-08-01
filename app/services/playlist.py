@@ -623,6 +623,7 @@ class PlaylistService:
                     "genre": ps.song.original_genre or "Unknown",
                     "position": ps.position,
                     "artwork_available": ps.song.cover_art is not None,
+                    "date_added": playlist.created_at.strftime("%b %d, %Y") if playlist.created_at else None,
                 }
                 for ps in playlist.songs if ps.song
             ]

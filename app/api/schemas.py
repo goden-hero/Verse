@@ -10,6 +10,7 @@ class SongResponse(BaseModel):
     duration: Optional[float] = 0.0
     genre: Optional[str] = "Unknown"
     artwork_available: bool
+    date_added: Optional[str] = None
 
     # Enable SQLAlchemy ORM mapping
     model_config = ConfigDict(from_attributes=True)
