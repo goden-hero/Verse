@@ -1,7 +1,7 @@
 """SQLAlchemy models for the Music Recommendation System database."""
 
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, UniqueConstraint, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -9,6 +9,61 @@ class Base(DeclarativeBase):
     """Declarative base class for SQLAlchemy models."""
 
     pass
+
+
+class User(Base):
+    """Represents a user account in the system."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Relationships
+    playlists: Mapped[list["Playlist"]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan"
+    )
+    liked_songs: Mapped[list["LikedSong"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    playback_history: Mapped[list["PlaybackHistory"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    queue: Mapped[list["QueueItem"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", order_by="QueueItem.position"
+    )
+    preferences: Mapped["UserPreferences | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, username='{self.username}')>"
+
+
+@event.listens_for(User.__table__, "after_create")
+def insert_default_user(target, connection, **kw):
+    """Automatically seeds the default system owner user upon table creation."""
+    connection.execute(
+        target.insert().values(
+            id=1,
+            username="Verse Owner",
+            password_hash=None,
+            display_name="Verse Owner",
+            is_active=True,
+        )
+    )
+
 
 
 class Song(Base):
@@ -190,6 +245,9 @@ class Playlist(Base):
     __tablename__ = "playlists"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), default=1, nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -212,6 +270,7 @@ class Playlist(Base):
     created_from: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
+    owner: Mapped["User"] = relationship(back_populates="playlists")
     songs: Mapped[list["PlaylistSong"]] = relationship(
         back_populates="playlist", cascade="all, delete-orphan", order_by="PlaylistSong.position"
     )
@@ -221,7 +280,7 @@ class Playlist(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Playlist(id={self.id}, name='{self.name}', generated_by='{self.generated_by}')>"
+        return f"<Playlist(id={self.id}, name='{self.name}', user_id={self.user_id})>"
 
 
 class PlaybackSession(Base):
@@ -315,5 +374,113 @@ class LLMCache(Base):
             f"<LLMCache(prompt_hash='{self.prompt_hash[:10]}...', version='{self.parser_version}', "
             f"usage={self.usage_count}, created_at={self.created_at})>"
         )
+
+
+class LikedSong(Base):
+    """Tracks songs liked by users."""
+
+    __tablename__ = "liked_songs"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    song_id: Mapped[int] = mapped_column(
+        ForeignKey("songs.id", ondelete="CASCADE"), primary_key=True
+    )
+    liked_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="liked_songs")
+    song: Mapped["Song"] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<LikedSong(user_id={self.user_id}, song_id={self.song_id})>"
+
+
+class PlaybackHistory(Base):
+    """Tracks user playback events for songs."""
+
+    __tablename__ = "playback_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    song_id: Mapped[int] = mapped_column(
+        ForeignKey("songs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    played_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    duration_played: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="playback_history")
+    song: Mapped["Song"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<PlaybackHistory(id={self.id}, user_id={self.user_id}, "
+            f"song_id={self.song_id}, played_at={self.played_at})>"
+        )
+
+
+class QueueItem(Base):
+    """Tracks songs queued for playback by users."""
+
+    __tablename__ = "queue_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    song_id: Mapped[int] = mapped_column(
+        ForeignKey("songs.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "position", name="uq_queue_items_user_position"),
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="queue")
+    song: Mapped["Song"] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<QueueItem(id={self.id}, user_id={self.user_id}, position={self.position})>"
+
+
+class UserPreferences(Base):
+    """Tracks user application preferences."""
+
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    theme: Mapped[str | None] = mapped_column(String, default="dark", nullable=True)
+    accent_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    volume: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    crossfade: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    equalizer: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="preferences")
+
+    def __repr__(self) -> str:
+        return f"<UserPreferences(user_id={self.user_id}, theme='{self.theme}')>"
+
 
 

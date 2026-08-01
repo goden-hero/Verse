@@ -20,28 +20,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Add the columns used by the playlist API to existing installations."""
-    with op.batch_alter_table("playlists") as batch_op:
-        batch_op.add_column(sa.Column("description", sa.String(), nullable=True))
-        batch_op.add_column(
-            sa.Column(
-                "updated_at",
-                sa.DateTime(),
-                nullable=False,
-                server_default=sa.text("CURRENT_TIMESTAMP"),
-            )
-        )
-        batch_op.add_column(sa.Column("seed_type", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("seed_song_id", sa.Integer(), nullable=True))
-        batch_op.add_column(sa.Column("generator_version", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("llm_model", sa.String(), nullable=True))
-        batch_op.add_column(sa.Column("created_from", sa.String(), nullable=True))
-        batch_op.create_foreign_key(
-            "fk_playlists_seed_song_id_songs",
-            "songs",
-            ["seed_song_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
+    op.add_column("playlists", sa.Column("description", sa.String(), nullable=True))
+    op.add_column(
+        "playlists",
+        sa.Column(
+            "updated_at",
+            sa.DateTime(),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+    )
+    op.add_column("playlists", sa.Column("seed_type", sa.String(), nullable=True))
+    op.add_column("playlists", sa.Column("seed_song_id", sa.Integer(), nullable=True))
+    op.add_column("playlists", sa.Column("generator_version", sa.String(), nullable=True))
+    op.add_column("playlists", sa.Column("llm_model", sa.String(), nullable=True))
+    op.add_column("playlists", sa.Column("created_from", sa.String(), nullable=True))
 
     op.create_table(
         "playback_sessions",

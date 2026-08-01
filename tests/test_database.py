@@ -7,11 +7,17 @@ from sqlalchemy.orm import Session
 from app.database.models import (
     AudioFeatures,
     Embeddings,
+    LikedSong,
     ListeningHistory,
     MusicBrainzMetadata,
+    PlaybackHistory,
+    Playlist,
+    QueueItem,
     SemanticTags,
     Song,
     TechnicalMetadata,
+    User,
+    UserPreferences,
 )
 
 
@@ -153,3 +159,68 @@ def test_song_relationships_and_cascade_delete(db_session: Session) -> None:
     assert db_session.query(Embeddings).filter_by(song_id=song.id).first() is None
     assert db_session.query(SemanticTags).filter_by(song_id=song.id).first() is None
     assert db_session.query(ListeningHistory).filter_by(song_id=song.id).first() is None
+
+
+def test_user_creation_and_unique_username(db_session: Session) -> None:
+    """Tests creating a User and verifying unique username constraint."""
+    user1 = User(username="alice", display_name="Alice")
+    db_session.add(user1)
+    db_session.commit()
+
+    retrieved = db_session.query(User).filter_by(username="alice").first()
+    assert retrieved is not None
+    assert retrieved.display_name == "Alice"
+    assert retrieved.password_hash is None
+    assert retrieved.is_active is True
+
+    # Duplicate username check
+    user2 = User(username="alice", display_name="Alice 2")
+    db_session.add(user2)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
+def test_user_owned_entities_and_cascade_delete(db_session: Session) -> None:
+    """Tests creating user-owned playlists, liked songs, history, queue, preferences and cascade delete."""
+    user = User(username="bob", display_name="Bob")
+    song = Song(path="/music/bob_song.mp3", hash="bob_hash", title="Bob Song")
+    db_session.add_all([user, song])
+    db_session.commit()
+
+    # Create user-owned items
+    playlist = Playlist(name="Bob's Jams", user_id=user.id)
+    liked = LikedSong(user_id=user.id, song_id=song.id)
+    history = PlaybackHistory(user_id=user.id, song_id=song.id, duration_played=120.5)
+    queue = QueueItem(user_id=user.id, song_id=song.id, position=1)
+    prefs = UserPreferences(user_id=user.id, theme="dark", volume=0.8)
+
+    db_session.add_all([playlist, liked, history, queue, prefs])
+    db_session.commit()
+
+    db_session.expire_all()
+    user_db = db_session.get(User, user.id)
+
+    assert len(user_db.playlists) == 1
+    assert user_db.playlists[0].name == "Bob's Jams"
+    assert len(user_db.liked_songs) == 1
+    assert user_db.liked_songs[0].song_id == song.id
+    assert len(user_db.playback_history) == 1
+    assert user_db.playback_history[0].duration_played == 120.5
+    assert len(user_db.queue) == 1
+    assert user_db.queue[0].position == 1
+    assert user_db.preferences.theme == "dark"
+
+    # Delete user and verify cascading deletes of user-owned state
+    db_session.delete(user_db)
+    db_session.commit()
+
+    assert db_session.query(User).filter_by(id=user.id).first() is None
+    assert db_session.query(Playlist).filter_by(user_id=user.id).first() is None
+    assert db_session.query(LikedSong).filter_by(user_id=user.id).first() is None
+    assert db_session.query(PlaybackHistory).filter_by(user_id=user.id).first() is None
+    assert db_session.query(QueueItem).filter_by(user_id=user.id).first() is None
+    assert db_session.query(UserPreferences).filter_by(user_id=user.id).first() is None
+
+    # Global song must remain intact!
+    assert db_session.query(Song).filter_by(id=song.id).first() is not None
+
