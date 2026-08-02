@@ -17,31 +17,54 @@ class PlaylistArtworkService:
     """Generates composite playlist cover images dynamically without persisting to disk."""
 
     @staticmethod
-    def _create_placeholder_image(size: tuple[int, int], text: str = "Verse", bg_color: tuple[int, int, int] = (30, 27, 46)) -> Image.Image:
-        """Helper to create a stylized fallback placeholder image with gradient/logo aesthetic."""
+    def _create_placeholder_image(size: tuple[int, int], text: str = "Verse", bg_color: tuple[int, int, int] = (20, 10, 35)) -> Image.Image:
+        """Helper to create a stylized fallback placeholder image with Verse logo aesthetic."""
         img = Image.new("RGB", size, color=bg_color)
         draw = ImageDraw.Draw(img)
         w, h = size
 
-        # Draw a nice modern gradient overlay effect
+        # Draw dark purple gradient overlay
         for y in range(h):
-            r = int(bg_color[0] + (60 - bg_color[0]) * (y / h))
-            g = int(bg_color[1] + (20 - bg_color[1]) * (y / h))
-            b = int(bg_color[2] + (100 - bg_color[2]) * (y / h))
+            factor = y / float(h)
+            r = int(25 + (120 - 25) * factor)
+            g = int(10 + (30 - 10) * factor)
+            b = int(45 + (190 - 45) * factor)
             draw.line([(0, y), (w, y)], fill=(r, g, b))
 
-        # Add stylized geometric icon lines for logo placeholder
-        center_x, center_y = w // 2, h // 2
-        line_w = max(2, w // 40)
+        center_x, center_y = w // 2, int(h * 0.45)
+        scale = min(w, h) / 500.0
+
+        # Draw Equalizer Bars in center top crotch of V
+        bar_x_positions = [-60, -40, -20, 0, 20, 40, 60]
+        bar_heights = [30, 60, 90, 120, 90, 60, 30]
+        for bx, bh in zip(bar_x_positions, bar_heights):
+            x = int(center_x + bx * scale)
+            y_top = int(center_y - (bh / 2.0) * scale)
+            y_bot = int(center_y + (bh / 2.0) * scale)
+            draw.line([(x, y_top), (x, y_bot)], fill=(216, 180, 254), width=max(2, int(6 * scale)))
+
+        # Draw 3D V Shape Lines
+        v_width = max(4, int(18 * scale))
+        # Left arm
         draw.line(
-            [(center_x - w // 4, center_y), (center_x + w // 4, center_y)],
-            fill=(255, 255, 255, 180),
-            width=line_w,
+            [(int(center_x - 120 * scale), int(center_y - 120 * scale)), (center_x, int(center_y + 120 * scale))],
+            fill=(192, 132, 252),
+            width=v_width,
         )
+        # Right arm
         draw.line(
-            [(center_x, center_y - h // 4), (center_x, center_y + h // 4)],
-            fill=(255, 255, 255, 180),
-            width=line_w,
+            [(center_x, int(center_y + 120 * scale)), (int(center_x + 120 * scale), int(center_y - 120 * scale))],
+            fill=(147, 51, 234),
+            width=v_width,
+        )
+
+        # Draw Music Note Accent on bottom right crook
+        note_cx = int(center_x + 25 * scale)
+        note_cy = int(center_y + 80 * scale)
+        note_r = max(4, int(16 * scale))
+        draw.ellipse(
+            [(note_cx - note_r, note_cy - int(note_r * 0.7)), (note_cx + note_r, note_cy + int(note_r * 0.7))],
+            fill=(244, 114, 182),
         )
 
         return img

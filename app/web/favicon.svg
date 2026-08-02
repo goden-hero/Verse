@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <radialGradient id="favBgGlow" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#090514" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="favVGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f3e8ff"/>
+      <stop offset="30%" stop-color="#c084fc"/>
+      <stop offset="70%" stop-color="#9333ea"/>
+      <stop offset="100%" stop-color="#6b21a8"/>
+    </linearGradient>
+
+    <linearGradient id="favWaveGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#9333ea"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+
+    <filter id="favGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="250" cy="250" r="240" fill="url(#favBgGlow)"/>
+
+  <g filter="url(#favGlow)" transform="translate(0, 15)">
+    <!-- Equalizer Soundwave Bars -->
+    <g>
+      <line x1="184" y1="190" x2="184" y2="230" stroke="url(#favWaveGrad)" stroke-width="7" stroke-linecap="round"/>
+      <line x1="206" y1="160" x2="206" y2="260" stroke="url(#favWaveGrad)" stroke-width="7.5" stroke-linecap="round"/>
+      <line x1="228" y1="125" x2="228" y2="285" stroke="url(#favWaveGrad)" stroke-width="8" stroke-linecap="round"/>
+      <line x1="250" y1="100" x2="250" y2="305" stroke="url(#favWaveGrad)" stroke-width="9" stroke-linecap="round"/>
+      <line x1="272" y1="125" x2="272" y2="285" stroke="url(#favWaveGrad)" stroke-width="8" stroke-linecap="round"/>
+      <line x1="294" y1="160" x2="294" y2="260" stroke="url(#favWaveGrad)" stroke-width="7.5" stroke-linecap="round"/>
+      <line x1="316" y1="190" x2="316" y2="230" stroke="url(#favWaveGrad)" stroke-width="7" stroke-linecap="round"/>
+    </g>
+
+    <!-- Main V Body -->
+    <path d="M 130 105
+             C 120 105, 112 115, 118 128
+             L 225 375
+             C 236 400, 264 400, 275 375
+             L 382 128
+             C 388 115, 380 105, 370 105
+             L 322 105
+             C 314 105, 307 111, 303 119
+             L 250 250
+             L 197 119
+             C 193 111, 186 105, 178 105
+             Z"
+          fill="url(#favVGrad)"/>
+
+    <!-- Integrated Music Note -->
+    <g transform="translate(0, 10)">
+      <ellipse cx="275" cy="340" rx="28" ry="20" transform="rotate(-25 275 340)" fill="url(#favVGrad)"/>
+      <path d="M 294 330 Q 302 260 308 200 Q 309 190 314 190 Q 318 190 316 200 L 302 322 Z" fill="url(#favVGrad)"/>
+      <path d="M 310 195 Q 345 220 338 270 Q 330 240 312 215 Z" fill="url(#favVGrad)"/>
+    </g>
+  </g>
+</svg>
