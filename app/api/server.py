@@ -19,6 +19,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+from app.identity import CurrentUserMiddleware
+
 # Configure CORS for ease of access during local development
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +29,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register request-scoped CurrentUser context middleware
+app.add_middleware(CurrentUserMiddleware)
 
 from app.api.routes import songs, search, playlists, playback, assistant
 
