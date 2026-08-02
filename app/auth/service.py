@@ -23,8 +23,11 @@ class AuthService:
 
     @staticmethod
     def is_first_run(session: Session) -> bool:
-        """Determines if the application has zero registered users (first-time run)."""
-        count = session.query(User).count()
+        """Determines whether a password-authenticated user has been registered."""
+        # The database migration creates a passwordless ``Verse Owner`` record to
+        # preserve ownership of existing data. It is not a login-capable account
+        # and must not suppress the first-run registration screen.
+        count = session.query(User).filter(User.password_hash.is_not(None)).count()
         return count == 0
 
     @staticmethod

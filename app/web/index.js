@@ -1,4 +1,4 @@
-// MuseAI Single Page Application Logic
+// Verse Single Page Application Logic
 
 // Application State
 let currentState = {
@@ -2147,7 +2147,7 @@ function renderChatMessages() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; height:18px;"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M4 11a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7z"/><line x1="9" y1="14" x2="9" y2="14.01"/><line x1="15" y1="14" x2="15" y2="14.01"/></svg>
         </div>
         <div class="chat-bubble">
-          👋 Hi! I'm your MuseAI Music Assistant. Tell me what mood, genre, or vibe you're looking for, or try one of the suggestions above!
+          👋 Hi! I'm your Verse Music Assistant. Tell me what mood, genre, or vibe you're looking for, or try one of the suggestions above!
         </div>
       </div>
     `;
@@ -2277,7 +2277,7 @@ function renderChatMessages() {
 // 8. BOOTSTRAP INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  console.log("MuseAI Web interface initialized.");
+  console.log("Verse Web interface initialized.");
   initAuthEvents();
   initNavigation();
   initPagination();
