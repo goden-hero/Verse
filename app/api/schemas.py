@@ -1,5 +1,6 @@
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 class SongResponse(BaseModel):
     """Pydantic model representing a song with basic metadata, excluding filesystem paths."""
@@ -64,9 +65,6 @@ class ChatRequest(BaseModel):
     """Pydantic model representing an AI Assistant prompt message request."""
     message: str
 
-
-
-from typing import Any, List, Optional
 class ChatStepResponse(BaseModel):
     """Pydantic model representing an execution step's result."""
     action: str
@@ -168,3 +166,40 @@ class ChatResponse(BaseModel):
     playlist: Optional[PlaylistPreviewResponse] = None
 
 
+class RegisterRequest(BaseModel):
+    """API request model for user registration."""
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+    display_name: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    """API request model for user login."""
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class UserResponse(BaseModel):
+    """API response model representing a user account, with zero sensitive fields."""
+    id: int
+    username: str
+    display_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginResponse(BaseModel):
+    """API response model for successful user authentication."""
+    user: UserResponse
+    message: str = "Login successful"
+
+
+class FirstRunResponse(BaseModel):
+    """API response model indicating if system is in first-run state."""
+    first_run: bool
+
+
+class SuccessResponse(BaseModel):
+    """Generic API response model for successful operations."""
+    message: str
+    success: bool = True

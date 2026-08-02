@@ -2,6 +2,12 @@
 
 // Application State
 let currentState = {
+  auth: {
+    currentUser: null,
+    authenticated: false,
+    loading: true,
+    firstRun: false
+  },
   currentPage: 1,
   pageSize: 100,
   totalSongs: 0,
@@ -15,6 +21,23 @@ let currentState = {
   activePlaylistId: null,
   activeSessionId: null,
   lastProgressSync: 0
+};
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const url = typeof input === 'string' ? input : input?.url || '';
+  const shouldAttachUser =
+    currentState.auth.authenticated &&
+    currentState.auth.currentUser?.id &&
+    url.startsWith('/api/v1/');
+
+  if (!shouldAttachUser) {
+    return nativeFetch(input, init);
+  }
+
+  const headers = new Headers(init.headers || {});
+  headers.set('X-User-ID', String(currentState.auth.currentUser.id));
+  return nativeFetch(input, { ...init, headers });
 };
 
 // SVG Icon Helpers to keep HTML clean
@@ -76,10 +99,270 @@ const elements = {
   sidebarPlaylists: document.getElementById('sidebar-playlists')
 };
 
+const authElements = {
+  shell: document.getElementById('auth-shell'),
+  app: document.getElementById('app-container'),
+  loading: document.getElementById('auth-loading'),
+  loginForm: document.getElementById('login-form'),
+  registerForm: document.getElementById('register-form'),
+  loginMessage: document.getElementById('login-message'),
+  registerMessage: document.getElementById('register-message'),
+  loginUsername: document.getElementById('login-username'),
+  loginPassword: document.getElementById('login-password'),
+  registerDisplayName: document.getElementById('register-display-name'),
+  registerUsername: document.getElementById('register-username'),
+  registerPassword: document.getElementById('register-password'),
+  registerConfirmPassword: document.getElementById('register-confirm-password'),
+  registerTitle: document.getElementById('register-title'),
+  registerSubtitle: document.getElementById('register-subtitle'),
+  btnShowRegister: document.getElementById('btn-show-register'),
+  btnShowLogin: document.getElementById('btn-show-login'),
+  accountTrigger: document.getElementById('account-trigger'),
+  accountMenu: document.getElementById('account-menu'),
+  accountAvatar: document.getElementById('account-avatar'),
+  accountDisplayName: document.getElementById('account-display-name'),
+  accountUsername: document.getElementById('account-username'),
+  btnLogout: document.getElementById('btn-logout'),
+  greeting: document.querySelector('.greeting')
+};
+
+// 0. AUTHENTICATION STATE AND FLOW
+function setAuthMessage(element, message = '', type = 'error') {
+  if (!element) return;
+  element.textContent = message;
+  element.classList.remove('error', 'success');
+  if (message) {
+    element.classList.add(type);
+  }
+}
+
+function getApiErrorMessage(errorBody, fallback) {
+  if (!errorBody) return fallback;
+  if (typeof errorBody.detail === 'string') return errorBody.detail;
+  if (Array.isArray(errorBody.detail) && errorBody.detail.length > 0) {
+    return 'Please check the form fields and try again.';
+  }
+  return fallback;
+}
+
+function showAuthScreen(mode) {
+  if (authElements.shell) authElements.shell.style.display = 'flex';
+  if (authElements.app) authElements.app.style.display = 'none';
+  if (authElements.loading) authElements.loading.style.display = 'none';
+  if (authElements.loginForm) authElements.loginForm.style.display = mode === 'login' ? 'flex' : 'none';
+  if (authElements.registerForm) authElements.registerForm.style.display = mode === 'register' ? 'flex' : 'none';
+  setAuthMessage(authElements.loginMessage);
+  setAuthMessage(authElements.registerMessage);
+
+  const isFirstRun = currentState.auth.firstRun;
+  if (authElements.registerTitle) {
+    authElements.registerTitle.textContent = isFirstRun ? 'Create First User' : 'Create Account';
+  }
+  if (authElements.registerSubtitle) {
+    authElements.registerSubtitle.textContent = isFirstRun
+      ? 'Create the first Verse user account.'
+      : 'Create a user account to start using Verse.';
+  }
+  if (authElements.btnShowLogin) {
+    authElements.btnShowLogin.style.display = isFirstRun ? 'none' : 'block';
+  }
+}
+
+function showAuthenticatedApp() {
+  if (authElements.shell) authElements.shell.style.display = 'none';
+  if (authElements.app) authElements.app.style.display = 'flex';
+  renderAuthenticatedUser();
+  loadAuthenticatedAppData();
+}
+
+function renderAuthenticatedUser() {
+  const user = currentState.auth.currentUser;
+  if (!user) return;
+
+  const displayName = user.display_name || user.username;
+  const initial = (displayName || user.username || 'U').trim().charAt(0).toUpperCase();
+
+  if (authElements.accountAvatar) authElements.accountAvatar.textContent = initial;
+  if (authElements.accountDisplayName) authElements.accountDisplayName.textContent = displayName;
+  if (authElements.accountUsername) authElements.accountUsername.textContent = `@${user.username}`;
+  if (authElements.greeting) authElements.greeting.textContent = `Good Evening, ${displayName}`;
+}
+
+async function bootstrapAuthentication() {
+  currentState.auth.loading = true;
+  if (authElements.loading) authElements.loading.style.display = 'block';
+  if (authElements.loginForm) authElements.loginForm.style.display = 'none';
+  if (authElements.registerForm) authElements.registerForm.style.display = 'none';
+  if (authElements.app) authElements.app.style.display = 'none';
+
+  try {
+    const response = await nativeFetch('/api/v1/auth/first-run');
+    if (!response.ok) throw new Error('first-run check failed');
+    const data = await response.json();
+    currentState.auth.firstRun = Boolean(data.first_run);
+    currentState.auth.loading = false;
+    showAuthScreen(currentState.auth.firstRun ? 'register' : 'login');
+  } catch (err) {
+    console.error('Authentication bootstrap failed:', err);
+    currentState.auth.loading = false;
+    showAuthScreen('login');
+    setAuthMessage(authElements.loginMessage, 'Unable to reach server.');
+  }
+}
+
+async function authenticateUser(username, password) {
+  const loginResponse = await nativeFetch('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+
+  if (!loginResponse.ok) {
+    const errorBody = await loginResponse.json().catch(() => null);
+    throw new Error(getApiErrorMessage(errorBody, 'Invalid username or password.'));
+  }
+
+  const loginData = await loginResponse.json();
+  currentState.auth.currentUser = loginData.user;
+  currentState.auth.authenticated = true;
+
+  const meResponse = await fetch('/api/v1/auth/me');
+  if (!meResponse.ok) {
+    throw new Error('Unable to load authenticated user.');
+  }
+
+  currentState.auth.currentUser = await meResponse.json();
+  currentState.auth.authenticated = true;
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const username = authElements.loginUsername.value.trim();
+  const password = authElements.loginPassword.value;
+  const submitBtn = document.getElementById('btn-login');
+
+  setAuthMessage(authElements.loginMessage);
+  submitBtn.disabled = true;
+
+  try {
+    await authenticateUser(username, password);
+    authElements.loginPassword.value = '';
+    showAuthenticatedApp();
+  } catch (err) {
+    currentState.auth.currentUser = null;
+    currentState.auth.authenticated = false;
+    setAuthMessage(authElements.loginMessage, err.message || 'Invalid username or password.');
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+async function handleRegisterSubmit(e) {
+  e.preventDefault();
+  const displayName = authElements.registerDisplayName.value.trim();
+  const username = authElements.registerUsername.value.trim();
+  const password = authElements.registerPassword.value;
+  const confirmPassword = authElements.registerConfirmPassword.value;
+  const submitBtn = document.getElementById('btn-register');
+
+  setAuthMessage(authElements.registerMessage);
+
+  if (password !== confirmPassword) {
+    setAuthMessage(authElements.registerMessage, 'Passwords do not match.');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  try {
+    const response = await nativeFetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        display_name: displayName,
+        username,
+        password
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      throw new Error(getApiErrorMessage(errorBody, 'Unable to create account.'));
+    }
+
+    await authenticateUser(username, password);
+    authElements.registerPassword.value = '';
+    authElements.registerConfirmPassword.value = '';
+    currentState.auth.firstRun = false;
+    showAuthenticatedApp();
+  } catch (err) {
+    setAuthMessage(authElements.registerMessage, err.message || 'Unable to create account.');
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch('/api/v1/auth/logout', { method: 'POST' });
+  } catch (err) {
+    console.error('Logout request failed:', err);
+  }
+
+  if (elements.audio) {
+    elements.audio.pause();
+    elements.audio.removeAttribute('src');
+  }
+
+  currentState.auth.currentUser = null;
+  currentState.auth.authenticated = false;
+  currentState.currentPlayingSong = null;
+  currentState.isPlaying = false;
+  currentState.queue = [];
+  currentState.queueIndex = -1;
+  currentState.activePlaylistId = null;
+  currentState.activeSessionId = null;
+
+  if (authElements.accountMenu) authElements.accountMenu.classList.remove('open');
+  showAuthScreen('login');
+}
+
+function loadAuthenticatedAppData() {
+  fetchSongs(1);
+  loadPlaylists();
+  loadHomePageSections();
+}
+
+function initAuthEvents() {
+  if (authElements.loginForm) authElements.loginForm.addEventListener('submit', handleLoginSubmit);
+  if (authElements.registerForm) authElements.registerForm.addEventListener('submit', handleRegisterSubmit);
+  if (authElements.btnShowRegister) {
+    authElements.btnShowRegister.addEventListener('click', () => showAuthScreen('register'));
+  }
+  if (authElements.btnShowLogin) {
+    authElements.btnShowLogin.addEventListener('click', () => showAuthScreen('login'));
+  }
+  if (authElements.btnLogout) authElements.btnLogout.addEventListener('click', handleLogout);
+  if (authElements.accountTrigger && authElements.accountMenu) {
+    authElements.accountTrigger.addEventListener('click', () => {
+      authElements.accountMenu.classList.toggle('open');
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#sidebar-account') && authElements.accountMenu) {
+      authElements.accountMenu.classList.remove('open');
+    }
+  });
+}
+
 // 1. NAVIGATION / SPA ROUTING
 function initNavigation() {
   elements.navItems.forEach(item => {
     item.addEventListener('click', () => {
+      if (!currentState.auth.authenticated) {
+        showAuthScreen('login');
+        return;
+      }
+
       const targetViewId = item.getAttribute('data-target');
       
       // Update active nav button
@@ -1983,6 +2266,7 @@ function renderChatMessages() {
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   console.log("MuseAI Web interface initialized.");
+  initAuthEvents();
   initNavigation();
   initPagination();
   initSearchEvents();
@@ -1990,11 +2274,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initAssistantEvents();
   initAudioPlayerEvents();
   initResizers();
-  
-  // Load primary data
-  fetchSongs(1);
-  loadPlaylists();
-  loadHomePageSections();
+
+  bootstrapAuthentication();
 });
 
 // Dynamic Loader Spin Animation Styles

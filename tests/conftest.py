@@ -1,7 +1,9 @@
 """pytest configuration and shared fixtures."""
 
-import pytest
+from collections.abc import Generator
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -63,7 +65,6 @@ def db_engine():
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator["Session", None, None]:
     """Provides an isolated SQLAlchemy Session for testing."""
-    from collections.abc import Generator
     from sqlalchemy.orm import Session, sessionmaker
 
     SessionClass = sessionmaker(bind=db_engine)

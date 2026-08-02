@@ -11,9 +11,66 @@
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
+  <!-- Authentication Shell -->
+  <div class="auth-shell" id="auth-shell">
+    <div class="auth-panel">
+      <div class="auth-brand-row">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2v20M17 5v14M7 9v6M22 10v4M2 10v4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">MuseAI</span>
+      </div>
+
+      <div class="auth-loading" id="auth-loading">Checking authentication...</div>
+
+      <form class="auth-form" id="login-form" style="display:none;">
+        <div>
+          <h1 class="auth-title">Login</h1>
+          <p class="auth-subtitle">Sign in to use Verse.</p>
+        </div>
+        <div class="auth-message" id="login-message" role="status"></div>
+        <div class="form-group">
+          <label for="login-username" class="form-label">Username</label>
+          <input type="text" class="form-input" id="login-username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password" class="form-label">Password</label>
+          <input type="password" class="form-input" id="login-password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="auth-primary-btn" id="btn-login">Login</button>
+        <button type="button" class="auth-secondary-btn" id="btn-show-register">Create Account</button>
+      </form>
+
+      <form class="auth-form" id="register-form" style="display:none;">
+        <div>
+          <h1 class="auth-title" id="register-title">Create Account</h1>
+          <p class="auth-subtitle" id="register-subtitle">Create a user account to start using Verse.</p>
+        </div>
+        <div class="auth-message" id="register-message" role="status"></div>
+        <div class="form-group">
+          <label for="register-display-name" class="form-label">Display Name</label>
+          <input type="text" class="form-input" id="register-display-name" autocomplete="name" required>
+        </div>
+        <div class="form-group">
+          <label for="register-username" class="form-label">Username</label>
+          <input type="text" class="form-input" id="register-username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="register-password" class="form-label">Password</label>
+          <input type="password" class="form-input" id="register-password" autocomplete="new-password" required>
+        </div>
+        <div class="form-group">
+          <label for="register-confirm-password" class="form-label">Confirm Password</label>
+          <input type="password" class="form-input" id="register-confirm-password" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="auth-primary-btn" id="btn-register">Create Account</button>
+        <button type="button" class="auth-secondary-btn" id="btn-show-login">Back to Login</button>
+      </form>
+    </div>
+  </div>
 
   <!-- Main Application Wrapper -->
-  <div class="app-container">
+  <div class="app-container" id="app-container" style="display:none;">
 
     <!-- 1. LEFT SIDEBAR -->
     <aside class="sidebar-left">
@@ -86,6 +143,24 @@
           <!-- Dynamic Playlists Load Here -->
           <li class="playlist-loading-item">Loading playlists...</li>
         </ul>
+      </div>
+
+      <div class="sidebar-account" id="sidebar-account">
+        <button class="account-trigger" id="account-trigger" type="button">
+          <div class="account-avatar" id="account-avatar">U</div>
+          <div class="account-meta">
+            <div class="account-name" id="account-display-name">User</div>
+            <div class="account-username" id="account-username">@user</div>
+          </div>
+          <svg class="account-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <div class="account-menu" id="account-menu">
+          <button type="button" class="account-menu-item" disabled>Profile</button>
+          <button type="button" class="account-menu-item" disabled>Settings</button>
+          <button type="button" class="account-menu-item" id="btn-logout">Logout</button>
+        </div>
       </div>
     </aside>
 
