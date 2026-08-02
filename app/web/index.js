@@ -146,6 +146,10 @@ function getApiErrorMessage(errorBody, fallback) {
 }
 
 function showAuthScreen(mode) {
+  if (document.body) {
+    document.body.classList.remove('authenticated');
+    document.body.classList.add('auth-locked');
+  }
   if (authElements.shell) authElements.shell.style.display = 'flex';
   if (authElements.app) authElements.app.style.display = 'none';
   if (authElements.loading) authElements.loading.style.display = 'none';
@@ -169,6 +173,10 @@ function showAuthScreen(mode) {
 }
 
 function showAuthenticatedApp() {
+  if (document.body) {
+    document.body.classList.remove('auth-locked');
+    document.body.classList.add('authenticated');
+  }
   if (authElements.shell) authElements.shell.style.display = 'none';
   if (authElements.app) authElements.app.style.display = 'flex';
   renderAuthenticatedUser();
@@ -190,6 +198,10 @@ function renderAuthenticatedUser() {
 
 async function bootstrapAuthentication() {
   currentState.auth.loading = true;
+  if (document.body) {
+    document.body.classList.remove('authenticated');
+    document.body.classList.add('auth-locked');
+  }
   if (authElements.loading) authElements.loading.style.display = 'block';
   if (authElements.loginForm) authElements.loginForm.style.display = 'none';
   if (authElements.registerForm) authElements.registerForm.style.display = 'none';
@@ -201,7 +213,7 @@ async function bootstrapAuthentication() {
     const data = await response.json();
     currentState.auth.firstRun = Boolean(data.first_run);
     currentState.auth.loading = false;
-    showAuthScreen(currentState.auth.firstRun ? 'register' : 'login');
+    showAuthScreen('login');
   } catch (err) {
     console.error('Authentication bootstrap failed:', err);
     currentState.auth.loading = false;
