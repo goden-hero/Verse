@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy.orm import Session
 
 from app.database.models import Song, SemanticTags, Playlist, PlaylistSong
+from app.identity import CurrentUser
 from app.metadata.semantic import OllamaClient
 from app.services.search import SearchService, SYNONYMS
 from app.services.playlist import (
@@ -116,7 +117,9 @@ def test_playlist_generator_post_filters_recommendations(db_session: Session) ->
     ]
 
     with patch("app.services.recommendation.RecommendationService.recommend", return_value=mock_recs):
+        user = CurrentUser(id=1, username="Verse Owner")
         playlist_data = PlaylistService.generate_playlist(
+            current_user=user,
             name="Test Sad Playlist",
             strategy="hybrid",
             filters={"moods": ["sad"], "seed_song_title": "Seed"},
@@ -147,7 +150,9 @@ def test_sparse_semantic_matches_return_short_playlist(db_session: Session) -> N
     db_session.add_all([t1, t2])
     db_session.commit()
 
+    user = CurrentUser(id=1, username="Verse Owner")
     playlist_data = PlaylistService.generate_playlist(
+        current_user=user,
         name="Relaxation Test",
         strategy="hybrid",
         filters={"moods": ["chill"], "energy_max": 0.3},
@@ -191,7 +196,9 @@ def test_recommendation_expansion_uses_top_semantic_matches(db_session: Session)
         return []
 
     with patch("app.services.recommendation.RecommendationService.recommend", side_effect=mock_recommend) as rec_mock:
+        user = CurrentUser(id=1, username="Verse Owner")
         playlist_data = PlaylistService.generate_playlist(
+            current_user=user,
             name="Workout Expansion",
             strategy="hybrid",
             filters={"moods": ["energetic"], "activities": ["workout"]},
@@ -302,7 +309,9 @@ def test_sparse_semantic_matches_expose_shortfall_feedback(db_session: Session) 
     db_session.add(t1)
     db_session.commit()
 
+    user = CurrentUser(id=1, username="Verse Owner")
     playlist_data = PlaylistService.generate_playlist(
+        current_user=user,
         name="Phase 8 Test",
         strategy="hybrid",
         filters={"moods": ["chill"]},
@@ -316,6 +325,7 @@ def test_sparse_semantic_matches_expose_shortfall_feedback(db_session: Session) 
     assert "Found 1 high-quality match(es) matching your request (requested 25)." in playlist_data["feedback_message"]
 
     preview_details = PlaylistService.generate_playlist_preview_details(
+        current_user=user,
         strategy="hybrid",
         filters={"moods": ["chill"]},
         target_length=20,
@@ -338,7 +348,9 @@ def test_post_construction_playlist_naming_generated_from_final_songs(db_session
     db_session.commit()
 
     with patch("app.assistant.parser.LLMParser.generate_playlist_name", return_value=("Midnight Neon", "A nocturnal synthwave vibe.")) as mock_naming:
+        user = CurrentUser(id=1, username="Verse Owner")
         playlist_data = PlaylistService.generate_playlist(
+            current_user=user,
             name="Generic Synthwave Mix",
             strategy="hybrid",
             filters={"moods": ["synthwave"]},
@@ -363,7 +375,9 @@ def test_post_construction_playlist_naming_fallback_on_error(db_session: Session
     db_session.commit()
 
     with patch("requests.post", side_effect=Exception("Ollama offline")):
+        user = CurrentUser(id=1, username="Verse Owner")
         playlist_data = PlaylistService.generate_playlist(
+            current_user=user,
             name="Default Rain Mix",
             strategy="hybrid",
             filters={"moods": ["calm"]},

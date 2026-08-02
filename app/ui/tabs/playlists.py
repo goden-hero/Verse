@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from app.database.connection import get_session
+from app.identity import CurrentUserProvider
 from app.services.playlist import PlaylistService
 from app.services.playback import PlaybackService
 
@@ -111,8 +112,9 @@ class PlaylistsTab(QWidget):
     def refresh_playlists(self) -> None:
         """Loads playlists from database."""
         self.playlists_list.clear()
+        user = CurrentUserProvider.get_current_user()
         with get_session() as session:
-            playlists = PlaylistService.get_playlists(session)
+            playlists = PlaylistService.get_playlists(current_user=user, session=session)
             for p in playlists:
                 item = QListWidgetItem(f"{p['name']} ({p['songs_count']} songs)")
                 item.setData(Qt.UserRole, p["id"])
@@ -137,10 +139,11 @@ class PlaylistsTab(QWidget):
         """Opens a playlist view details by database ID."""
         self.selected_playlist_id = playlist_id
         self.songs_list.clear()
+        user = CurrentUserProvider.get_current_user()
 
         with get_session() as session:
             # Query playlist details
-            playlists = PlaylistService.get_playlists(session)
+            playlists = PlaylistService.get_playlists(current_user=user, session=session)
             p = next((x for x in playlists if x["id"] == playlist_id), None)
             if not p:
                 return
@@ -156,7 +159,7 @@ class PlaylistsTab(QWidget):
             )
 
             # Load songs list
-            songs = PlaylistService.get_playlist_songs(playlist_id, session)
+            songs = PlaylistService.get_playlist_songs(current_user=user, playlist_id=playlist_id, session=session)
             for s in songs:
                 s_item = QListWidgetItem(f"{s['title']} — {s['artist']}")
                 s_item.setData(Qt.UserRole, s["id"])
@@ -174,8 +177,9 @@ class PlaylistsTab(QWidget):
         if self.selected_playlist_id is None:
             return
 
+        user = CurrentUserProvider.get_current_user()
         with get_session() as session:
-            songs = PlaylistService.get_playlist_songs(self.selected_playlist_id, session)
+            songs = PlaylistService.get_playlist_songs(current_user=user, playlist_id=self.selected_playlist_id, session=session)
             if songs:
                 # Load songs into playback queue
                 self.main_window.playback_queue = [s["id"] for s in songs]
@@ -187,8 +191,9 @@ class PlaylistsTab(QWidget):
         if self.selected_playlist_id is None:
             return
 
+        user = CurrentUserProvider.get_current_user()
         with get_session() as session:
-            songs = PlaylistService.get_playlist_songs(self.selected_playlist_id, session)
+            songs = PlaylistService.get_playlist_songs(current_user=user, playlist_id=self.selected_playlist_id, session=session)
             if songs:
                 if not hasattr(self.main_window, "playback_queue") or not self.main_window.playback_queue:
                     self.main_window.playback_queue = [s["id"] for s in songs]
@@ -204,8 +209,9 @@ class PlaylistsTab(QWidget):
 
         new_name, ok = QInputDialog.getText(self, "Rename Playlist", "Enter new name:")
         if ok and new_name.strip():
+            user = CurrentUserProvider.get_current_user()
             with get_session() as session:
-                PlaylistService.rename_playlist(self.selected_playlist_id, new_name.strip(), session)
+                PlaylistService.rename_playlist(current_user=user, playlist_id=self.selected_playlist_id, new_name=new_name.strip(), session=session)
             self.refresh_playlists()
             self.open_playlist_by_id(self.selected_playlist_id)
 
@@ -213,8 +219,9 @@ class PlaylistsTab(QWidget):
         if self.selected_playlist_id is None:
             return
 
+        user = CurrentUserProvider.get_current_user()
         with get_session() as session:
-            PlaylistService.delete_playlist(self.selected_playlist_id, session)
+            PlaylistService.delete_playlist(current_user=user, playlist_id=self.selected_playlist_id, session=session)
         self.selected_playlist_id = None
         self.refresh_playlists()
 
@@ -223,22 +230,21 @@ class PlaylistsTab(QWidget):
         if self.selected_playlist_id is None:
             return
 
+        user = CurrentUserProvider.get_current_user()
         with get_session() as session:
-            playlists = PlaylistService.get_playlists(session)
+            playlists = PlaylistService.get_playlists(current_user=user, session=session)
             p = next((x for x in playlists if x["id"] == self.selected_playlist_id), None)
             if not p or p["generated_by"] != "AI":
                 return
 
-            # Re-generate playlist with same filters/parameters
-            # We can extract filters from prompt text or build a mock filter set
             filters = {}
             if p["prompt"]:
-                # Parse mood tags keywords from the prompt if present
                 for word in ["chill", "happy", "focused", "sad", "energetic"]:
                     if word in p["prompt"].lower():
                         filters.setdefault("moods", []).append(word)
 
             PlaylistService.generate_playlist(
+                current_user=user,
                 name=p["name"],
                 strategy=p["strategy"] or "hybrid",
                 filters=filters,
@@ -247,9 +253,7 @@ class PlaylistsTab(QWidget):
                 prompt=p["prompt"],
             )
 
-            # Delete old duplicate playlist if a new one is created, or since PlaylistService.generate_playlist creates a new one
-            # We delete the old playlist
-            PlaylistService.delete_playlist(self.selected_playlist_id, session)
+            PlaylistService.delete_playlist(current_user=user, playlist_id=self.selected_playlist_id, session=session)
 
         # Refresh
         self.selected_playlist_id = None

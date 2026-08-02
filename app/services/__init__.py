@@ -6,6 +6,9 @@ from app.services.recommendation import RecommendationService
 from app.services.search import SearchService
 from app.services.history import HistoryService
 from app.services.playlist import PlaylistService
+from app.services.playback_session import PlaybackSessionService
+from app.services.queue import QueueService
+from app.services.preferences import UserPreferencesService
 
 __all__ = [
     "LibraryService",
@@ -14,4 +17,7 @@ __all__ = [
     "SearchService",
     "HistoryService",
     "PlaylistService",
+    "PlaybackSessionService",
+    "QueueService",
+    "UserPreferencesService",
 ]

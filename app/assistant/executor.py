@@ -4,6 +4,7 @@ import logging
 import random
 from sqlalchemy.orm import Session
 from app.assistant.schemas import ActionPlan
+from app.identity import CurrentUser
 from app.services import (
     HistoryService,
     LibraryService,
@@ -20,7 +21,12 @@ class Executor:
     """Translates the ActionPlan sequences into sequential calls against backend Service Layer."""
 
     @staticmethod
-    def execute_plan(plan: ActionPlan, session: Session, progress_callback=None) -> dict:
+    def execute_plan(
+        current_user: CurrentUser,
+        plan: ActionPlan,
+        session: Session = None,
+        progress_callback=None,
+    ) -> dict:
         """Executes the sequence of steps and returns outcome status dictionary."""
         results = []
         success = True
@@ -29,10 +35,10 @@ class Executor:
             action_type = action_item.action
             step_name = f"Step {idx + 1}: {action_type}"
 
-            if progress_callback:
+            if progress_callback and callable(progress_callback):
                 progress_callback(step_name, {"status": "running"})
 
-            logger.info("Executing plan step: %s", action_type)
+            logger.info("Executing plan step: %s (user_id=%s)", action_type, current_user.id if current_user else None)
 
             try:
                 out = None
@@ -59,6 +65,7 @@ class Executor:
                         raise ValueError(f"Song not found: {action_item.song_title}")
                 elif action_type == "generate_playlist":
                     out = PlaylistService.generate_playlist(
+                        current_user=current_user,
                         name=action_item.playlist_name,
                         strategy=action_item.strategy,
                         filters=action_item.filters,
@@ -66,13 +73,17 @@ class Executor:
                         session=session,
                     )
                 elif action_type == "play_playlist":
-                    playlists = PlaylistService.get_playlists(session=session)
+                    playlists = PlaylistService.get_playlists(current_user=current_user, session=session)
                     target = next(
                         (p for p in playlists if p["name"].lower() == action_item.playlist_name.lower()),
                         None,
                     )
                     if target:
-                        songs = PlaylistService.get_playlist_songs(target["id"], session=session)
+                        songs = PlaylistService.get_playlist_songs(
+                            current_user=current_user,
+                            playlist_id=target["id"],
+                            session=session,
+                        )
                         if songs:
                             handler = PlaybackService._handler
                             if handler:
@@ -111,14 +122,24 @@ class Executor:
                 elif action_type == "like_song":
                     song = LibraryService.get_song_by_title(action_item.song_title, session=session)
                     if song:
-                        HistoryService.set_like_status(song_id=song["id"], liked=True, session=session)
+                        HistoryService.set_like_status(
+                            current_user=current_user,
+                            song_id=song["id"],
+                            liked=True,
+                            session=session,
+                        )
                         out = {"status": "liked", "song_title": song["title"]}
                     else:
                         raise ValueError(f"Song not found: {action_item.song_title}")
                 elif action_type == "unlike_song":
                     song = LibraryService.get_song_by_title(action_item.song_title, session=session)
                     if song:
-                        HistoryService.set_like_status(song_id=song["id"], liked=False, session=session)
+                        HistoryService.set_like_status(
+                            current_user=current_user,
+                            song_id=song["id"],
+                            liked=False,
+                            session=session,
+                        )
                         out = {"status": "unliked", "song_title": song["title"]}
                     else:
                         raise ValueError(f"Song not found: {action_item.song_title}")
@@ -145,7 +166,7 @@ class Executor:
                     LibraryService.scan_library(action_item.folder_path, session=session)
                     out = {"status": "scan_started"}
                 elif action_type == "open_playlist":
-                    playlists = PlaylistService.get_playlists(session=session)
+                    playlists = PlaylistService.get_playlists(current_user=current_user, session=session)
                     target = next(
                         (p for p in playlists if p["name"].lower() == action_item.playlist_name.lower()),
                         None,
@@ -161,26 +182,35 @@ class Executor:
                     else:
                         raise ValueError(f"Playlist not found: {action_item.playlist_name}")
                 elif action_type == "delete_playlist":
-                    playlists = PlaylistService.get_playlists(session=session)
+                    playlists = PlaylistService.get_playlists(current_user=current_user, session=session)
                     target = next(
                         (p for p in playlists if p["name"].lower() == action_item.playlist_name.lower()),
                         None,
                     )
                     if target:
-                        PlaylistService.delete_playlist(target["id"], session=session)
+                        PlaylistService.delete_playlist(
+                            current_user=current_user,
+                            playlist_id=target["id"],
+                            session=session,
+                        )
                         out = {"status": "deleted_playlist", "playlist_id": target["id"]}
                     else:
                         raise ValueError(f"Playlist not found: {action_item.playlist_name}")
                 elif action_type == "save_playlist":
                     out = {"status": "saved"}
                 elif action_type == "rename_playlist":
-                    playlists = PlaylistService.get_playlists(session=session)
+                    playlists = PlaylistService.get_playlists(current_user=current_user, session=session)
                     target = next(
                         (p for p in playlists if p["name"].lower() == action_item.playlist_name.lower()),
                         None,
                     )
                     if target:
-                        PlaylistService.rename_playlist(target["id"], action_item.new_name, session=session)
+                        PlaylistService.rename_playlist(
+                            current_user=current_user,
+                            playlist_id=target["id"],
+                            new_name=action_item.new_name,
+                            session=session,
+                        )
                         out = {"status": "renamed_playlist", "playlist_id": target["id"]}
                     else:
                         raise ValueError(f"Playlist not found: {action_item.playlist_name}")
@@ -188,12 +218,12 @@ class Executor:
                     raise NotImplementedError(f"Action '{action_type}' execution not configured.")
 
                 results.append({"action": action_type, "status": "success", "output": out})
-                if progress_callback:
+                if progress_callback and callable(progress_callback):
                     progress_callback(step_name, {"status": "success", "output": out})
             except Exception as e:
                 logger.error("Failed executing plan step: %s. Error: %s", action_type, e)
                 results.append({"action": action_type, "status": "error", "error": str(e)})
-                if progress_callback:
+                if progress_callback and callable(progress_callback):
                     progress_callback(step_name, {"status": "error", "error": str(e)})
                 success = False
                 break

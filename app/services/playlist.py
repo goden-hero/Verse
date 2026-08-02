@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.database.models import Playlist, PlaylistSong, Song, SemanticTags
+from app.identity import CurrentUser
 from app.services.search import SearchService, _expand_terms
 from app.services.recommendation import RecommendationService
 from app.recommendations.selector import map_ui_to_backend_strategy
 
 logger = logging.getLogger("music_rec.services.playlist")
-
 
 
 @dataclass(frozen=True)
@@ -55,19 +55,16 @@ def _song_matches_semantic(
     moods_expanded = _expand_terms(moods or [])
     activities_expanded = _expand_terms(activities or [])
 
-    # Match moods
     if moods_expanded:
         tag_moods = [m.lower().strip() for m in json.loads(tag.moods or "[]")]
         if not any(m in tag_moods for m in moods_expanded):
             return False
 
-    # Match activities
     if activities_expanded:
         tag_acts = [a.lower().strip() for a in json.loads(tag.activities or "[]")]
         if not any(a in tag_acts for a in activities_expanded):
             return False
 
-    # Match energy
     if energy_min is not None or energy_max is not None:
         energy_map = {"low": 0.2, "medium": 0.5, "high": 0.8}
         numeric_val = energy_map.get(tag.energy or "medium", 0.5)
@@ -155,116 +152,122 @@ def _score_candidate_confidence(
     filters: dict,
     session: Session,
 ) -> PlaylistCandidate:
-    moods = filters.get("moods", [])
-    activities = filters.get("activities", [])
-    energy_min = filters.get("energy_min")
-    energy_max = filters.get("energy_max")
-
-    base_confidence = BASE_CONFIDENCE_BY_SOURCE.get(candidate.source, 0.80)
-    boost = SEMANTIC_BOOST * _semantic_match_count(
+    base_confidence = BASE_CONFIDENCE_BY_SOURCE.get(candidate.source, 0.70)
+    match_count = _semantic_match_count(
         song_id=candidate.song_id,
-        moods=moods,
-        activities=activities,
-        energy_min=energy_min,
-        energy_max=energy_max,
+        moods=filters.get("moods", []),
+        activities=filters.get("activities", []),
+        energy_min=filters.get("energy_min"),
+        energy_max=filters.get("energy_max"),
         session=session,
     )
-    confidence = min(1.0, base_confidence + boost)
-
+    final_confidence = min(1.0, base_confidence + (match_count * SEMANTIC_BOOST))
     return PlaylistCandidate(
         song_id=candidate.song_id,
         source=candidate.source,
         similarity_score=candidate.similarity_score,
-        confidence=confidence,
+        confidence=final_confidence,
     )
 
 
-def _score_candidate_confidences(
-    candidates: list[PlaylistCandidate],
-    filters: dict,
-    session: Session,
-) -> list[PlaylistCandidate]:
-    return [_score_candidate_confidence(candidate, filters, session) for candidate in candidates]
-
-
-def _rank_candidates(
-    candidates: list[PlaylistCandidate],
-    session: Session,
-) -> list[PlaylistCandidate]:
-    """Ranks candidates by confidence, similarity, and artist diversity."""
-    remaining = sorted(
-        candidates,
-        key=lambda candidate: (
-            -candidate.confidence,
-            -candidate.similarity_score,
-            candidate.song_id,
-        ),
-    )
-    ranked = []
+def _rank_candidates(candidates: list[PlaylistCandidate], session: Session) -> list[PlaylistCandidate]:
     artist_counts = {}
+    ranked = []
 
-    while remaining:
-        best_index = min(
-            range(len(remaining)),
-            key=lambda index: (
-                -remaining[index].confidence,
-                -remaining[index].similarity_score,
-                artist_counts.get(_candidate_artist(remaining[index], session), 0),
-                remaining[index].song_id,
-            ),
-        )
-        candidate = remaining.pop(best_index)
-        artist = _candidate_artist(candidate, session)
-        artist_counts[artist] = artist_counts.get(artist, 0) + 1
-        ranked.append(candidate)
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda c: (c.confidence, c.similarity_score),
+        reverse=True,
+    )
 
-    return ranked
+    for candidate in sorted_candidates:
+        song = session.get(Song, candidate.song_id)
+        artist = song.artist if song and song.artist else "Unknown Artist"
+        count = artist_counts.get(artist, 0)
+        adjusted_score = candidate.confidence - (count * 0.05)
+        ranked.append((adjusted_score, candidate))
+        artist_counts[artist] = count + 1
 
-
-def _candidate_artist(candidate: PlaylistCandidate, session: Session) -> str:
-    song = session.get(Song, candidate.song_id)
-    if not song or not song.artist:
-        return ""
-    return song.artist.strip().lower()
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [candidate for _, candidate in ranked]
 
 
 def _apply_confidence_threshold(
     candidates: list[PlaylistCandidate],
     min_confidence: float = MIN_PLAYLIST_CONFIDENCE,
 ) -> list[PlaylistCandidate]:
-    """Stops at the first ranked candidate below the minimum confidence."""
-    accepted = []
+    confident = []
     for candidate in candidates:
-        if candidate.confidence < min_confidence:
+        if candidate.confidence >= min_confidence:
+            confident.append(candidate)
+        else:
             break
-        accepted.append(candidate)
-    return accepted
+    return confident
 
 
 def _build_shortfall_metadata(requested_length: int, found_length: int) -> dict:
-    if found_length < requested_length:
-        reason = (
-            f"Only {found_length} song(s) strongly matched your request criteria with sufficient confidence."
-            if found_length > 0
-            else "No songs matched your request criteria with sufficient confidence."
-        )
-        msg = (
-            f"Found {found_length} high-quality match(es) matching your request (requested {requested_length}). Only these songs strongly matched your request."
-            if found_length > 0
-            else f"No high-quality matches found matching your request (requested {requested_length})."
-        )
+    if found_length >= requested_length:
         return {
             "requested_length": requested_length,
             "found_length": found_length,
-            "shortfall_reason": reason,
-            "feedback_message": msg,
+            "shortfall_reason": None,
+            "feedback_message": None,
         }
+
+    reason = (
+        f"Only {found_length} song(s) strongly matched your constraints out of {requested_length} requested. "
+        "Relaxing filters or scanning more songs will increase match size."
+    )
+    feedback = (
+        f"Found {found_length} high-quality match(es) matching your request (requested {requested_length})."
+    )
     return {
         "requested_length": requested_length,
         "found_length": found_length,
-        "shortfall_reason": None,
-        "feedback_message": None,
+        "shortfall_reason": reason,
+        "feedback_message": feedback,
     }
+
+
+def _retrieve_initial_candidates(filters: dict, session: Session) -> list[PlaylistCandidate]:
+    seed_song = _find_seed_song(filters.get("seed_song_title"), session)
+    seed_candidate = (
+        [PlaylistCandidate(song_id=seed_song.id, source="seed", similarity_score=1.0, confidence=1.0)]
+        if seed_song
+        else []
+    )
+
+    semantic_songs = SearchService.semantic_search(
+        moods=filters.get("moods", []),
+        activities=filters.get("activities", []),
+        energy_min=filters.get("energy_min"),
+        energy_max=filters.get("energy_max"),
+        session=session,
+    )
+    semantic_candidates = [
+        PlaylistCandidate(song_id=song["id"], source="semantic", similarity_score=1.0, confidence=1.0)
+        for song in semantic_songs
+    ]
+
+    return _dedupe_candidates([*seed_candidate, *semantic_candidates])
+
+
+def _retrieve_fallback_seeds(filters: dict, session: Session) -> list[PlaylistCandidate]:
+    moods = filters.get("moods", [])
+    activities = filters.get("activities", [])
+    query_terms = [*moods, *activities]
+
+    fallback_songs = []
+    for term in query_terms:
+        matches = SearchService.metadata_search(query=term, session=session)
+        for m in matches:
+            if not any(fs["id"] == m["id"] for fs in fallback_songs):
+                fallback_songs.append(m)
+
+    return [
+        PlaylistCandidate(song_id=song["id"], source="semantic", similarity_score=0.8, confidence=0.90)
+        for song in fallback_songs
+    ]
 
 
 def _validate_candidates_semantically(
@@ -272,75 +275,18 @@ def _validate_candidates_semantically(
     filters: dict,
     session: Session,
 ) -> list[PlaylistCandidate]:
-    """Keeps candidates that satisfy the original semantic filters."""
-    moods = filters.get("moods", [])
-    activities = filters.get("activities", [])
-    energy_min = filters.get("energy_min")
-    energy_max = filters.get("energy_max")
-
-    return [
-        candidate
-        for candidate in candidates
-        if _song_matches_semantic(candidate.song_id, moods, activities, energy_min, energy_max, session)
-    ]
-
-
-
-def _retrieve_initial_candidates(filters: dict, session: Session) -> list[PlaylistCandidate]:
-    """Retrieves only direct semantic and seed-song matches."""
-    candidates = []
-    moods = filters.get("moods", [])
-    activities = filters.get("activities", [])
-    energy_min = filters.get("energy_min")
-    energy_max = filters.get("energy_max")
-
-    if moods or activities or (energy_min is not None) or (energy_max is not None):
-        semantic_matches = SearchService.semantic_search(
-            moods=moods,
-            activities=activities,
-            energy_min=energy_min,
-            energy_max=energy_max,
+    valid = []
+    for candidate in candidates:
+        if _song_matches_semantic(
+            song_id=candidate.song_id,
+            moods=filters.get("moods", []),
+            activities=filters.get("activities", []),
+            energy_min=filters.get("energy_min"),
+            energy_max=filters.get("energy_max"),
             session=session,
-        )
-        candidates.extend(
-            PlaylistCandidate(song_id=s["id"], source="semantic")
-            for s in semantic_matches
-        )
-
-    seed_song = _find_seed_song(filters.get("seed_song_title"), session)
-    if seed_song:
-        candidates.append(PlaylistCandidate(song_id=seed_song.id, source="seed"))
-
-    return _dedupe_candidates(_score_candidate_confidences(candidates, filters, session))
-
-
-def _retrieve_fallback_seeds(filters: dict, session: Session) -> list[PlaylistCandidate]:
-    """Retrieves fallback seeds from metadata search or general library when exact tag matches are 0."""
-    candidates = []
-    moods = filters.get("moods", [])
-    activities = filters.get("activities", [])
-    seed_title = filters.get("seed_song_title")
-    terms = [*moods, *activities]
-    if seed_title:
-        terms.append(seed_title)
-
-    for term in terms:
-        clean_term = term.strip().lower()
-        if clean_term:
-            matches = SearchService.ranked_metadata_search(query=clean_term, session=session)
-            candidates.extend(
-                PlaylistCandidate(song_id=m["id"], source="semantic", confidence=0.80)
-                for m in matches[:5]
-            )
-
-    if not candidates:
-        songs = session.query(Song).limit(5).all()
-        candidates.extend(
-            PlaylistCandidate(song_id=s.id, source="semantic", confidence=0.75)
-            for s in songs
-        )
-
-    return _dedupe_candidates(candidates)
+        ):
+            valid.append(candidate)
+    return valid
 
 
 def _expand_candidates_from_recommendations(
@@ -350,43 +296,34 @@ def _expand_candidates_from_recommendations(
     target_length: int,
     session: Session,
 ) -> list[PlaylistCandidate]:
-    """Expands from the strongest direct matches and keeps semantically valid recs (or expanded recs if tags sparse)."""
-    if not seeds:
-        return []
+    source_name = _candidate_source_for_strategy(strategy)
+    rec_candidates = []
+    seed_song_ids = [candidate.song_id for candidate in seeds[:3]]
 
-    expanded = []
-    recommendation_source = _candidate_source_for_strategy(strategy)
-    expansion_seeds = sorted(seeds, key=lambda c: c.confidence, reverse=True)[: max(1, min(3, target_length))]
-    per_seed_limit = max(target_length * 2, 1)
-
-    for seed in expansion_seeds:
-        try:
-            recs = RecommendationService.recommend(
-                song_id=seed.song_id,
-                strategy=strategy or "hybrid",
-                limit=per_seed_limit,
-                session=session,
-            )
-        except Exception as e:
-            logger.warning("Failed to fetch recommendations for seed %s: %s", seed.song_id, e)
-            continue
-
+    for seed_id in seed_song_ids:
+        recs = RecommendationService.recommend(
+            song_id=seed_id,
+            strategy=strategy,
+            limit=target_length,
+            session=session,
+        )
         for rec in recs:
-            expanded.append(
-                PlaylistCandidate(
+            if _song_matches_semantic(
+                song_id=rec["id"],
+                moods=filters.get("moods", []),
+                activities=filters.get("activities", []),
+                energy_min=filters.get("energy_min"),
+                energy_max=filters.get("energy_max"),
+                session=session,
+            ):
+                candidate = PlaylistCandidate(
                     song_id=rec["id"],
-                    source=recommendation_source,
-                    similarity_score=float(rec.get("score", 0.0)),
+                    source=source_name,
+                    similarity_score=rec.get("score", 0.0),
                 )
-            )
+                rec_candidates.append(_score_candidate_confidence(candidate, filters, session))
 
-    validated_candidates = _validate_candidates_semantically(expanded, filters, session)
-    if not validated_candidates and expanded:
-        # If strict tag matching returns empty because tags are sparse, keep expanded recs
-        validated_candidates = expanded
-
-    scored_candidates = _score_candidate_confidences(validated_candidates, filters, session)
-    return _dedupe_candidates(scored_candidates)
+    return rec_candidates
 
 
 def _construct_playlist_candidates(
@@ -395,8 +332,7 @@ def _construct_playlist_candidates(
     target_length: int,
     session: Session,
 ) -> list[PlaylistCandidate]:
-    """Runs retrieval, expansion, validation, and construction with target as an upper bound."""
-    if target_length <= 0:
+    if not filters.get("seed_song_title") and not filters.get("moods") and not filters.get("activities") and filters.get("energy_min") is None and filters.get("energy_max") is None:
         return []
 
     strategy = map_ui_to_backend_strategy(strategy, session)
@@ -435,13 +371,13 @@ def _construct_playlist_candidates(
     return confident_candidates[:target_length]
 
 
-
 class PlaylistService:
     """Manages manual, AI, and hybrid playlists, including automatic content selection."""
 
     @staticmethod
     def create_playlist(
-        name: str,
+        current_user: CurrentUser,
+        name: str = "",
         prompt: str | None = None,
         strategy: str | None = None,
         generated_by: str = "MANUAL",
@@ -454,9 +390,12 @@ class PlaylistService:
         created_from: str | None = None,
         commit: bool = True,
     ) -> int:
-        """Creates a new playlist record in the database."""
+        """Creates a new playlist record in the database for the current user."""
+        user_id = current_user.id or 1
         now = datetime.utcnow()
+
         playlist = Playlist(
+            user_id=user_id,
             name=name,
             description=description,
             prompt=prompt,
@@ -474,21 +413,31 @@ class PlaylistService:
         session.flush()
         if commit:
             session.commit()
-        logger.info("Created playlist: %s (id: %s)", name, playlist.id)
+        logger.info("Created playlist: %s (id: %s, user_id: %s)", name, playlist.id, user_id)
         return playlist.id
 
     @staticmethod
     def add_songs_to_playlist(
+        current_user: CurrentUser,
         playlist_id: int,
         song_ids: list[int],
         session: Session,
         commit: bool = True,
     ) -> None:
-        """Appends a list of song IDs to the playlist with positional ordering."""
-        # Clear existing songs if any
+        """Appends a list of song IDs to the user-owned playlist with positional ordering."""
+        user_id = current_user.id or 1
+        song_ids = song_ids or []
+
+        playlist = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=user_id)
+            .first()
+        )
+        if not playlist:
+            raise ValueError(f"Playlist with ID {playlist_id} not found for user {user_id}.")
+
         session.query(PlaylistSong).filter_by(playlist_id=playlist_id).delete()
-        
-        # Add new songs
+
         for pos, song_id in enumerate(song_ids):
             ps = PlaylistSong(
                 playlist_id=playlist_id,
@@ -496,30 +445,34 @@ class PlaylistService:
                 position=pos,
             )
             session.add(ps)
-        
-        playlist = session.get(Playlist, playlist_id)
-        if playlist:
-            playlist.updated_at = datetime.utcnow()
-            
+
+        playlist.updated_at = datetime.utcnow()
+
         if commit:
             session.commit()
-        
-        # Invalidate cover cache
+
         from app.services.playlist_artwork import PlaylistArtworkService
         PlaylistArtworkService.invalidate_cover(playlist_id)
-        
-        logger.info("Added %d songs to playlist id %d", len(song_ids), playlist_id)
+
+        logger.info("Added %d songs to playlist id %d for user %s", len(song_ids), playlist_id, user_id)
 
     @staticmethod
     def update_playlist(
+        current_user: CurrentUser,
         playlist_id: int,
         name: str | None = None,
         description: str | None = None,
         song_ids: list[int] | None = None,
         session: Session = None,
     ) -> bool:
-        """Updates name, description, and song list of a playlist."""
-        playlist = session.get(Playlist, playlist_id)
+        """Updates name, description, and song list of a user-owned playlist."""
+        user_id = current_user.id or 1
+
+        playlist = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=user_id)
+            .first()
+        )
         if not playlist:
             return False
 
@@ -532,25 +485,35 @@ class PlaylistService:
         session.commit()
 
         if song_ids is not None:
-            PlaylistService.add_songs_to_playlist(playlist_id, song_ids, session)
+            PlaylistService.add_songs_to_playlist(
+                current_user=current_user,
+                playlist_id=playlist_id,
+                song_ids=song_ids,
+                session=session,
+            )
 
         return True
 
     @staticmethod
     def get_playlists(
+        current_user: CurrentUser,
         session: Session,
         section: str = "all",
         limit: int = 50,
     ) -> list[dict]:
-        """Retrieves metadata of playlists with optional section filtering."""
+        """Retrieves metadata of playlists for the current user with optional section filtering."""
+        user_id = current_user.id or 1
+
         if section == "recently_played":
             from app.services.playback_session import PlaybackSessionService
-            return PlaybackSessionService.get_recently_played_playlists(limit=limit, session=session)
+            return PlaybackSessionService.get_recently_played_playlists(
+                current_user=current_user, limit=limit, session=session
+            )
 
-        query = session.query(Playlist)
+        query = session.query(Playlist).filter(Playlist.user_id == user_id)
         if section == "recently_added":
             query = query.order_by(Playlist.created_at.desc())
-        else: # default/all
+        else:
             query = query.order_by(Playlist.updated_at.desc())
 
         playlists = query.limit(limit).all()
@@ -559,7 +522,7 @@ class PlaylistService:
         for p in playlists:
             songs_count = len(p.songs)
             total_duration = sum((ps.song.duration or 0.0) for ps in p.songs)
-            stats = PlaybackSessionService.get_playlist_stats(p.id, session)
+            stats = PlaybackSessionService.get_playlist_stats(current_user=current_user, playlist_id=p.id, session=session)
             results.append({
                 "id": p.id,
                 "name": p.name,
@@ -581,14 +544,24 @@ class PlaylistService:
         return results
 
     @staticmethod
-    def get_playlist_details(playlist_id: int, session: Session) -> dict | None:
-        """Retrieves complete details of a single playlist including AI metadata and song list."""
-        playlist = session.get(Playlist, playlist_id)
+    def get_playlist_details(
+        current_user: CurrentUser,
+        playlist_id: int,
+        session: Session,
+    ) -> dict | None:
+        """Retrieves complete details of a single user-owned playlist."""
+        user_id = current_user.id or 1
+
+        playlist = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=user_id)
+            .first()
+        )
         if not playlist:
             return None
 
         from app.services.playback_session import PlaybackSessionService
-        stats = PlaybackSessionService.get_playlist_stats(playlist_id, session)
+        stats = PlaybackSessionService.get_playlist_stats(current_user=current_user, playlist_id=playlist_id, session=session)
         songs_count = len(playlist.songs)
         total_duration = sum((ps.song.duration or 0.0) for ps in playlist.songs)
 
@@ -626,16 +599,26 @@ class PlaylistService:
                     "date_added": playlist.created_at.strftime("%b %d, %Y") if playlist.created_at else None,
                 }
                 for ps in playlist.songs if ps.song
-            ]
+            ],
         }
 
     @staticmethod
-    def get_playlist_songs(playlist_id: int, session: Session) -> list[dict]:
-        """Retrieves all songs belonging to a playlist ordered by position."""
-        playlist = session.get(Playlist, playlist_id)
+    def get_playlist_songs(
+        current_user: CurrentUser,
+        playlist_id: int,
+        session: Session,
+    ) -> list[dict]:
+        """Retrieves all songs belonging to a user-owned playlist ordered by position."""
+        user_id = current_user.id or 1
+
+        playlist = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=user_id)
+            .first()
+        )
         if not playlist:
             return []
-        
+
         results = []
         for ps in playlist.songs:
             s = ps.song
@@ -651,30 +634,52 @@ class PlaylistService:
         return results
 
     @staticmethod
-    def delete_playlist(playlist_id: int, session: Session) -> None:
-        """Deletes a playlist by ID (cascades deletes to playlist_songs)."""
-        playlist = session.get(Playlist, playlist_id)
+    def delete_playlist(
+        current_user: CurrentUser,
+        playlist_id: int,
+        session: Session,
+    ) -> None:
+        """Deletes a user-owned playlist by ID."""
+        user_id = current_user.id or 1
+
+        playlist = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=user_id)
+            .first()
+        )
         if playlist:
             session.delete(playlist)
             session.commit()
             from app.services.playlist_artwork import PlaylistArtworkService
             PlaylistArtworkService.invalidate_cover(playlist_id)
-            logger.info("Deleted playlist id %d", playlist_id)
+            logger.info("Deleted playlist id %d for user %s", playlist_id, user_id)
 
     @staticmethod
-    def rename_playlist(playlist_id: int, new_name: str, session: Session) -> None:
-        """Renames a playlist."""
-        PlaylistService.update_playlist(playlist_id, name=new_name, session=session)
+    def rename_playlist(
+        current_user: CurrentUser,
+        playlist_id: int,
+        new_name: str,
+        session: Session,
+    ) -> None:
+        """Renames a user-owned playlist."""
+        PlaylistService.update_playlist(
+            current_user=current_user,
+            playlist_id=playlist_id,
+            name=new_name,
+            session=session,
+        )
 
     @staticmethod
     def generate_playlist_preview(
-        strategy: str,
-        filters: dict,
-        target_length: int,
-        session: Session,
+        current_user: CurrentUser,
+        strategy: str = "hybrid",
+        filters: dict = None,
+        target_length: int = 20,
+        session: Session = None,
     ) -> list[dict]:
         """Generates list of recommended songs based on rules without persisting to database."""
         details = PlaylistService.generate_playlist_preview_details(
+            current_user=current_user,
             strategy=strategy,
             filters=filters,
             target_length=target_length,
@@ -684,14 +689,16 @@ class PlaylistService:
 
     @staticmethod
     def generate_playlist_preview_details(
-        strategy: str,
-        filters: dict,
-        target_length: int,
-        session: Session,
+        current_user: CurrentUser,
+        strategy: str = "hybrid",
+        filters: dict = None,
+        target_length: int = 20,
+        session: Session = None,
         name: str = "Generated Preview",
         enable_naming: bool = True,
     ) -> dict:
         """Generates temporary playlist preview details including shortfall feedback metadata and LLM naming."""
+        filters = filters or {}
         final_candidates = _construct_playlist_candidates(
             strategy=strategy,
             filters=filters,
@@ -737,15 +744,18 @@ class PlaylistService:
 
     @staticmethod
     def generate_playlist(
-        name: str,
-        strategy: str,
-        filters: dict,
-        target_length: int,
-        session: Session,
+        current_user: CurrentUser,
+        name: str = "",
+        strategy: str = "hybrid",
+        filters: dict = None,
+        target_length: int = 20,
+        session: Session = None,
         prompt: str | None = None,
         enable_naming: bool = True,
     ) -> dict:
         """AI-orchestrated playlist generator delegating to search and recommendation engines."""
+        filters = filters or {}
+
         final_candidates = _construct_playlist_candidates(
             strategy=strategy,
             filters=filters,
@@ -775,6 +785,7 @@ class PlaylistService:
                 logger.warning("Failed calling LLM playlist naming: %s", err)
 
         playlist_id = PlaylistService.create_playlist(
+            current_user=current_user,
             name=final_title,
             description=final_desc,
             prompt=prompt,
@@ -782,7 +793,12 @@ class PlaylistService:
             generated_by="AI",
             session=session,
         )
-        PlaylistService.add_songs_to_playlist(playlist_id, final_song_ids, session)
+        PlaylistService.add_songs_to_playlist(
+            current_user=current_user,
+            playlist_id=playlist_id,
+            song_ids=final_song_ids,
+            session=session,
+        )
 
         playlist = session.get(Playlist, playlist_id)
         songs_count = len(playlist.songs)
@@ -807,7 +823,5 @@ class PlaylistService:
                     "artist": ps.song.artist,
                 }
                 for ps in playlist.songs
-            ]
+            ],
         }
-
-

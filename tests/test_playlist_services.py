@@ -5,15 +5,23 @@ import pytest
 from PIL import Image
 from sqlalchemy.orm import Session
 from app.database.models import Base, Playlist, PlaybackSession, Song
+from app.identity import CurrentUser
 from app.services.playlist import PlaylistService
 from app.services.playback_session import PlaybackSessionService
 from app.services.playlist_artwork import PlaylistArtworkService
 
 
-def test_playback_session_lifecycle(db_session: Session):
+@pytest.fixture
+def test_user() -> CurrentUser:
+    """Fixture providing default owner user for tests."""
+    return CurrentUser(id=1, username="Verse Owner", display_name="Verse Owner")
+
+
+def test_playback_session_lifecycle(db_session: Session, test_user: CurrentUser):
     """Test starting, updating progress, completing, and fetching stats for playback sessions."""
     # 1. Create a playlist
     playlist_id = PlaylistService.create_playlist(
+        current_user=test_user,
         name="Session Test Playlist",
         generated_by="MANUAL",
         session=db_session,
@@ -21,6 +29,7 @@ def test_playback_session_lifecycle(db_session: Session):
 
     # 2. Start session
     psession = PlaybackSessionService.start_session(
+        current_user=test_user,
         playlist_id=playlist_id,
         song_index=0,
         position=10.5,
@@ -34,6 +43,7 @@ def test_playback_session_lifecycle(db_session: Session):
 
     # 3. Update progress
     updated = PlaybackSessionService.update_progress(
+        current_user=test_user,
         session_id=psession.id,
         song_index=2,
         position=45.0,
@@ -45,7 +55,7 @@ def test_playback_session_lifecycle(db_session: Session):
     assert updated.completed is False
 
     # 4. Check Continue Listening
-    continue_list = PlaybackSessionService.get_continue_listening(limit=5, session=db_session)
+    continue_list = PlaybackSessionService.get_continue_listening(current_user=test_user, limit=5, session=db_session)
     assert len(continue_list) >= 1
     latest_continue = continue_list[0]
     assert latest_continue["playlist_id"] == playlist_id
@@ -53,26 +63,26 @@ def test_playback_session_lifecycle(db_session: Session):
     assert latest_continue["current_position"] == 45.0
 
     # 5. Check Recently Played
-    recently_played = PlaybackSessionService.get_recently_played_playlists(limit=5, session=db_session)
+    recently_played = PlaybackSessionService.get_recently_played_playlists(current_user=test_user, limit=5, session=db_session)
     assert len(recently_played) >= 1
     assert recently_played[0]["id"] == playlist_id
 
     # 6. Finish session
-    finished = PlaybackSessionService.finish_session(session_id=psession.id, session=db_session)
+    finished = PlaybackSessionService.finish_session(current_user=test_user, session_id=psession.id, session=db_session)
     assert finished.completed is True
     assert finished.finished_at is not None
 
     # 7. Check stats computation
-    stats = PlaybackSessionService.get_playlist_stats(playlist_id=playlist_id, session=db_session)
+    stats = PlaybackSessionService.get_playlist_stats(current_user=test_user, playlist_id=playlist_id, session=db_session)
     assert stats["play_count"] == 1
     assert stats["last_played_at"] is not None
 
     # Continue Listening should no longer return finished session
-    continue_list_after = PlaybackSessionService.get_continue_listening(limit=5, session=db_session)
+    continue_list_after = PlaybackSessionService.get_continue_listening(current_user=test_user, limit=5, session=db_session)
     assert not any(c["session_id"] == psession.id for c in continue_list_after)
 
 
-def test_playlist_artwork_generation(db_session: Session):
+def test_playlist_artwork_generation(db_session: Session, test_user: CurrentUser):
     """Test dynamic cover art composition for 1, 2, 3, and 4+ song playlists."""
     # Create test songs with fake JPEG cover art
     songs = []
@@ -92,41 +102,42 @@ def test_playlist_artwork_generation(db_session: Session):
     db_session.commit()
 
     # 1. Test 1-song cover
-    p1 = PlaylistService.create_playlist(name="1 Song Playlist", session=db_session)
-    PlaylistService.add_songs_to_playlist(p1, [songs[0].id], db_session)
+    p1 = PlaylistService.create_playlist(current_user=test_user, name="1 Song Playlist", session=db_session)
+    PlaylistService.add_songs_to_playlist(current_user=test_user, playlist_id=p1, song_ids=[songs[0].id], session=db_session)
     cover1_bytes = PlaylistArtworkService.generate_cover(p1, db_session)
     assert len(cover1_bytes) > 0
     img1 = Image.open(io.BytesIO(cover1_bytes))
     assert img1.size == (500, 500)
 
     # 2. Test 2-song cover (1x2 split)
-    p2 = PlaylistService.create_playlist(name="2 Song Playlist", session=db_session)
-    PlaylistService.add_songs_to_playlist(p2, [songs[0].id, songs[1].id], db_session)
+    p2 = PlaylistService.create_playlist(current_user=test_user, name="2 Song Playlist", session=db_session)
+    PlaylistService.add_songs_to_playlist(current_user=test_user, playlist_id=p2, song_ids=[songs[0].id, songs[1].id], session=db_session)
     cover2_bytes = PlaylistArtworkService.generate_cover(p2, db_session)
     assert len(cover2_bytes) > 0
     img2 = Image.open(io.BytesIO(cover2_bytes))
     assert img2.size == (500, 500)
 
     # 3. Test 3-song cover (2x2 grid with Verse logo)
-    p3 = PlaylistService.create_playlist(name="3 Song Playlist", session=db_session)
-    PlaylistService.add_songs_to_playlist(p3, [songs[0].id, songs[1].id, songs[2].id], db_session)
+    p3 = PlaylistService.create_playlist(current_user=test_user, name="3 Song Playlist", session=db_session)
+    PlaylistService.add_songs_to_playlist(current_user=test_user, playlist_id=p3, song_ids=[songs[0].id, songs[1].id, songs[2].id], session=db_session)
     cover3_bytes = PlaylistArtworkService.generate_cover(p3, db_session)
     assert len(cover3_bytes) > 0
     img3 = Image.open(io.BytesIO(cover3_bytes))
     assert img3.size == (500, 500)
 
     # 4. Test 4-song cover (2x2 grid)
-    p4 = PlaylistService.create_playlist(name="4 Song Playlist", session=db_session)
-    PlaylistService.add_songs_to_playlist(p4, [s.id for s in songs[:4]], db_session)
+    p4 = PlaylistService.create_playlist(current_user=test_user, name="4 Song Playlist", session=db_session)
+    PlaylistService.add_songs_to_playlist(current_user=test_user, playlist_id=p4, song_ids=[s.id for s in songs[:4]], session=db_session)
     cover4_bytes = PlaylistArtworkService.generate_cover(p4, db_session)
     assert len(cover4_bytes) > 0
     img4 = Image.open(io.BytesIO(cover4_bytes))
     assert img4.size == (500, 500)
 
 
-def test_playlist_extended_metadata(db_session: Session):
+def test_playlist_extended_metadata(db_session: Session, test_user: CurrentUser):
     """Test creating and retrieving rich AI and manual metadata."""
     pid = PlaylistService.create_playlist(
+        current_user=test_user,
         name="AI Vibe Mix",
         prompt="Songs for midnight code review",
         strategy="vector",
@@ -139,7 +150,7 @@ def test_playlist_extended_metadata(db_session: Session):
         session=db_session,
     )
 
-    details = PlaylistService.get_playlist_details(pid, db_session)
+    details = PlaylistService.get_playlist_details(current_user=test_user, playlist_id=pid, session=db_session)
     assert details is not None
     assert details["name"] == "AI Vibe Mix"
     assert details["description"] == "Late night ambient coding tunes"

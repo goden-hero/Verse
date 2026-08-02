@@ -1,19 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.api.dependencies import get_db
+from app.api.dependencies import get_db, get_current_user, CurrentUser
 from app.api.schemas import ChatRequest, ChatResponse, PlaylistPreviewResponse
 from app.services.assistant import AssistantService
 
 router = APIRouter(tags=["Assistant"])
 
 @router.post("/assistant/chat", response_model=ChatResponse)
-def assistant_chat(payload: ChatRequest, db: Session = Depends(get_db)):
+def assistant_chat(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     """Handles natural language chat prompts for music recommendation and returns structured plans and playlist previews."""
     try:
-        res = AssistantService.process_chat(message=payload.message, session=db)
+        res = AssistantService.process_chat(
+            current_user=current_user,
+            message=payload.message,
+            session=db,
+        )
         return res
-
-
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -21,10 +27,14 @@ def assistant_chat(payload: ChatRequest, db: Session = Depends(get_db)):
         )
 
 @router.post("/playlists/{playlist_id}/regenerate", response_model=PlaylistPreviewResponse)
-def regenerate_playlist(playlist_id: int, db: Session = Depends(get_db)):
+def regenerate_playlist(
+    playlist_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     """Regenerates a playlist preview with fresh recommendations."""
     try:
-        res = AssistantService.regenerate_playlist(playlist_id=playlist_id, session=db)
+        res = AssistantService.regenerate_playlist(current_user=current_user, playlist_id=playlist_id, session=db)
         return res
     except Exception as e:
         raise HTTPException(

@@ -189,6 +189,10 @@ def test_history_manager_logs_and_retrieves(db_session):
     assert history[0]["result"] == result
 
 
+from app.identity import CurrentUser
+test_user = CurrentUser(id=1, username="test_user", display_name="Test User", is_authenticated=True)
+
+
 def test_executor_dispatches_playback_actions(db_session):
     """Verify Executor handles simple actions without crashing."""
     raw = {"plan": [{"action": "pause"}, {"action": "resume"}]}
@@ -197,7 +201,7 @@ def test_executor_dispatches_playback_actions(db_session):
     mock_handler = MagicMock()
     PlaybackService.register_handler(mock_handler)
 
-    res = Executor.execute_plan(plan, db_session)
+    res = Executor.execute_plan(current_user=test_user, plan=plan, session=db_session)
     assert res["success"] is True
     assert len(res["steps"]) == 2
     assert res["steps"][0]["action"] == "pause"
@@ -209,7 +213,7 @@ def test_executor_song_not_found(db_session):
     raw = {"plan": [{"action": "play_song", "song_title": "Non-existent Song"}]}
     plan = ActionPlan.model_validate(raw)
 
-    res = Executor.execute_plan(plan, db_session)
+    res = Executor.execute_plan(current_user=test_user, plan=plan, session=db_session)
     assert res["success"] is False
     assert res["steps"][0]["status"] == "error"
     assert "Song not found" in res["steps"][0]["error"]
@@ -244,7 +248,7 @@ def test_executor_generate_playlist_success(db_session):
         ]
     }
     plan = ActionPlan.model_validate(raw)
-    res = Executor.execute_plan(plan, db_session)
+    res = Executor.execute_plan(current_user=test_user, plan=plan, session=db_session)
 
     assert res["success"] is True
     assert res["steps"][0]["status"] == "success"
@@ -268,16 +272,17 @@ def test_assistant_service_process_chat_exposes_shortfall_message(db_session):
         "plan": [
             {
                 "action": "generate_playlist",
-                "playlist_name": "Chill Mix",
+                "playlist_name": "Ultra Chill",
                 "strategy": "hybrid",
                 "filters": {"moods": ["chill"]},
-                "target_length": 25,
+                "target_length": 25
             }
         ]
     }
 
+    test_user = CurrentUser(id=1, username="test_user")
     with patch("app.assistant.parser.LLMParser.parse_intent", return_value=mock_plan):
-        res = AssistantService.process_chat("Create a chill mix", db_session)
+        res = AssistantService.process_chat(current_user=test_user, message="make a chill mix", session=db_session)
 
     assert res["success"] is True
     assert res["playlist"] is not None

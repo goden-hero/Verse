@@ -1,21 +1,12 @@
+"""AssistantService to handle AI assistant prompt processing, plan execution, and playlist regeneration."""
+
 import logging
 import time
-import uuid
 from sqlalchemy.orm import Session
-
-from app.config.settings import settings
-from app.assistant import LLMParser, Planner
-from app.assistant.parser import (
-    LLMConnectionError,
-    LLMModelNotFoundError,
-    LLMJSONDecodeError,
-    LLMSchemaValidationError,
-)
-from app.services.playlist import PlaylistService
-from app.services.search import SearchService
-from app.services.library import LibraryService
-from app.services.recommendation import RecommendationService
-from app.recommendations.selector import map_ui_to_backend_strategy
+from app.assistant.executor import Executor
+from app.assistant.parser import LLMParser
+from app.assistant.schemas import ActionPlan
+from app.identity import CurrentUser
 
 logger = logging.getLogger("music_rec.services.assistant")
 
@@ -25,6 +16,7 @@ class AssistantService:
 
     @staticmethod
     def process_chat(
+        current_user: CurrentUser,
         message: str,
         session: Session,
         request_id: str | None = None,
@@ -33,187 +25,68 @@ class AssistantService:
         clean_msg = message.strip()
         if not clean_msg:
             return {
-                "message": "Please enter a valid message or prompt.",
+                "message": "I didn't receive a prompt. Please tell me what kind of music or playlist you're looking for!",
                 "success": False,
                 "steps": [],
                 "playlist": None,
             }
 
-        req_id = request_id or uuid.uuid4().hex[:8]
+        req_id = request_id or "REQ-PROMPT"
+        logger.info("\n============================================================")
+        logger.info("[%s] [START] Processing assistant prompt for user %s: '%s'", req_id, current_user.id, clean_msg)
         t_start_total = time.perf_counter()
 
-        logger.info("\n=================== ASSISTANT TRACE MODE [%s] ===================", req_id)
-        logger.info("[%s] [TRACE] REQUEST RECEIVED: '%s'", req_id, clean_msg)
-
-        # 1. Parse prompt into plan_dict using LLMParser
+        # 1. Parse prompt into structured ActionPlan
         t_parser_start = time.perf_counter()
+        parser = LLMParser(disable_health_check=True)
         try:
-            parser = LLMParser()
-            plan_dict = parser.parse_intent(clean_msg, session, request_id=req_id)
-            t_parser_end = time.perf_counter()
-            parser_ms = int((t_parser_end - t_parser_start) * 1000)
-            logger.info("[%s] [TRACE] PARSED ACTION PLAN JSON: %s", req_id, plan_dict)
-
-        except (LLMConnectionError, ConnectionError) as e:
-            logger.warning("[%s] [TRACE] FAIL: Ollama connection error: %s", req_id, e)
-            return {
-                "message": f"Could not connect to Ollama server ({settings.ollama_url}). Please ensure Ollama is running locally.",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
-        except (LLMModelNotFoundError, ValueError) as e:
-            if "Model" in str(e):
-                logger.warning("[%s] [TRACE] FAIL: Ollama model error: %s", req_id, e)
-                return {
-                    "message": f"Ollama Model Error: {str(e)}",
-                    "success": False,
-                    "steps": [],
-                    "playlist": None,
-                }
-            raise
-        except LLMJSONDecodeError as e:
-            logger.error("[%s] [TRACE] FAIL: LLM JSON Decode Error: %s", req_id, e)
-            return {
-                "message": f"LLM Output Format Error: {str(e)}",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
-        except LLMSchemaValidationError as e:
-            logger.error("[%s] [TRACE] FAIL: LLM Schema Validation Error: %s", req_id, e)
-            return {
-                "message": f"LLM Schema Validation Error: {str(e)}",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
+            raw_plan = parser.parse_intent(clean_msg, session=session, request_id=req_id)
+            if raw_plan and "plan" in raw_plan:
+                plan = ActionPlan.model_validate(raw_plan)
+                is_fallback = False
+            else:
+                plan = ActionPlan(plan=[])
+                is_fallback = True
         except Exception as e:
-            logger.error("[%s] [TRACE] FAIL: LLMParser unexpected error: %s", req_id, e)
-            return {
-                "message": f"Parsing Error: {str(e)}",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
+            logger.warning("[%s] LLM Parser unavailable or failed: %s", req_id, e)
+            plan = ActionPlan(plan=[])
+            is_fallback = True
+        t_parser_end = time.perf_counter()
+        parser_ms = int((t_parser_end - t_parser_start) * 1000)
 
-        if not plan_dict or not plan_dict.get("plan"):
-            logger.info("[%s] [TRACE] Empty ActionPlan generated for prompt: '%s'", req_id, clean_msg)
-            return {
-                "message": "I couldn't understand that request. Try asking for a mood, genre, or artist mix!",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
+        logger.info("[%s] [PARSER] Plan generated in %d ms (fallback=%s): %s", req_id, parser_ms, is_fallback, plan.model_dump())
 
-        # 2. Build validated ActionPlan
+        # 2. Execute plan steps
         t_executor_start = time.perf_counter()
-        try:
-            action_plan = Planner.create_plan(plan_dict)
-            logger.info("[%s] [TRACE] VALIDATED ACTION PLAN: %s", req_id, action_plan.model_dump())
-        except Exception as e:
-            logger.error("[%s] [TRACE] FAIL: Planner schema validation failed: %s", req_id, e)
-            return {
-                "message": f"Action Plan Validation Error: {str(e)}",
-                "success": False,
-                "steps": [],
-                "playlist": None,
-            }
+        exec_res = Executor.execute_plan(current_user=current_user, plan=plan, session=session)
+        t_executor_end = time.perf_counter()
+        executor_ms = int((t_executor_end - t_executor_start) * 1000)
 
-        # 3. Execute plan steps for web (temporary previews without persisting)
-        steps_out = []
+        # 3. Process execution steps for playlist previews / feedback
         playlist_preview = None
-        main_playlist_title = f"{clean_msg.title()} Mix"
         playlist_ms = 0
+        steps_out = []
 
-        for idx, action_item in enumerate(action_plan.plan):
-            action_type = action_item.action
-            logger.info("[%s] [TRACE] EXECUTING ACTION #%d: '%s' | %s", req_id, idx + 1, action_type, action_item)
-            try:
-                out_songs = []
-                preview_details = None
+        for s in exec_res.get("steps", []):
+            action_type = s.get("action")
+            step_status = s.get("status")
+            step_output = s.get("output")
+            step_err = s.get("error")
 
-                if action_type == "generate_playlist":
-                    main_playlist_title = action_item.playlist_name or main_playlist_title
-                    strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
-                    req_len = action_item.target_length or 25
-                    
+            if step_status == "success":
+                if action_type == "generate_playlist" and isinstance(step_output, dict):
                     t_pl_start = time.perf_counter()
-                    logger.info("[%s] [TRACE] SERVICE INVOCATION: PlaylistService.generate_playlist_preview_details (strategy=%s, filters=%s, target_length=%d)", req_id, strategy_mapped, action_item.filters, req_len)
-                    preview_details = PlaylistService.generate_playlist_preview_details(
-                        strategy=strategy_mapped,
-                        filters=action_item.filters or {},
-                        target_length=req_len,
-                        session=session,
-                        name=main_playlist_title,
-                    )
+                    playlist_preview = step_output
                     t_pl_end = time.perf_counter()
-                    playlist_ms = int((t_pl_end - t_pl_start) * 1000)
-
-                    out_songs = preview_details["songs"]
-                    logger.info("[%s] [TRACE] RESULT: PlaylistService returned %d preview tracks (title: '%s')", req_id, len(out_songs), preview_details.get("name"))
-
-                elif action_type == "semantic_search":
-                    matches = SearchService.semantic_search(
-                        moods=action_item.moods,
-                        activities=action_item.activities,
-                        energy_min=action_item.energy_min,
-                        energy_max=action_item.energy_max,
-                        session=session,
-                    )
-                    out_songs = matches
-                elif action_type == "search_library":
-                    matches = SearchService.ranked_metadata_search(query=action_item.query, session=session)
-                    out_songs = matches
-                elif action_type == "recommend_song":
-                    song = LibraryService.get_song_by_title(action_item.song_title, session=session)
-                    if song:
-                        strategy_mapped = map_ui_to_backend_strategy(action_item.strategy or "automatic", session=session)
-                        out_songs = RecommendationService.recommend(
-                            song_id=song["id"],
-                            strategy=strategy_mapped,
-                            limit=action_item.limit or 10,
-                            session=session,
-                        )
+                    playlist_ms += int((t_pl_end - t_pl_start) * 1000)
 
                 steps_out.append({
                     "action": action_type,
                     "status": "success",
-                    "output": {"songs_count": len(out_songs)},
+                    "output": step_output,
                     "error": None
                 })
-
-                if not playlist_preview:
-                    if preview_details:
-                        playlist_preview = preview_details
-                    elif out_songs:
-                        detailed_songs = []
-                        for s in out_songs:
-                            detailed_songs.append({
-                                "id": s["id"],
-                                "title": s.get("title", "Unknown"),
-                                "artist": s.get("artist", "Unknown"),
-                                "album": s.get("album", "Unknown"),
-                                "duration": s.get("duration", 0.0),
-                                "genre": s.get("original_genre") or s.get("genre") or "Unknown",
-                                "artwork_available": s.get("artwork_available", False)
-                            })
-
-                        total_dur = sum((s.get("duration") or 0.0) for s in detailed_songs)
-                        playlist_preview = {
-                            "name": main_playlist_title,
-                            "songs_count": len(detailed_songs),
-                            "total_duration": total_dur,
-                            "strategy": action_type,
-                            "requested_length": None,
-                            "found_length": len(detailed_songs),
-                            "shortfall_reason": None,
-                            "feedback_message": None,
-                            "songs": detailed_songs
-                        }
-
-            except Exception as step_err:
-                logger.error("[%s] [TRACE] FAIL executing assistant step %s: %s", req_id, action_type, step_err)
+            else:
                 steps_out.append({
                     "action": action_type,
                     "status": "error",
@@ -266,15 +139,22 @@ class AssistantService:
             "playlist": playlist_preview if (playlist_preview and playlist_preview.get("songs_count", 0) > 0) else playlist_preview,
         }
 
-
-
-
-
     @staticmethod
-    def regenerate_playlist(playlist_id: int, session: Session) -> dict:
-        """Regenerates a playlist preview with a fresh selection of songs."""
+    def regenerate_playlist(
+        current_user: CurrentUser,
+        playlist_id: int,
+        session: Session,
+    ) -> dict:
+        """Regenerates a playlist preview with a fresh selection of songs for current_user."""
         from app.database.models import Playlist
-        pl = session.get(Playlist, playlist_id) if playlist_id > 0 else None
+        from app.services.playlist import PlaylistService
+        pl = (
+            session.query(Playlist)
+            .filter_by(id=playlist_id, user_id=current_user.id or 1)
+            .first()
+            if playlist_id > 0
+            else None
+        )
         
         name = pl.name if pl else "Regenerated Mix"
         strategy = pl.strategy if pl else "hybrid"
@@ -285,6 +165,7 @@ class AssistantService:
             filters["moods"] = [prompt.lower()]
 
         songs = PlaylistService.generate_playlist_preview(
+            current_user=current_user,
             strategy=strategy or "hybrid",
             filters=filters,
             target_length=20,

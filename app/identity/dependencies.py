@@ -9,11 +9,8 @@ from app.identity.user import CurrentUser
 from app.identity.context import CurrentUserProvider
 
 
-def get_current_user(request: Request | None = None) -> CurrentUser:
+def get_current_user() -> CurrentUser:
     """FastAPI dependency yielding the resolved CurrentUser for the active request.
-
-    Args:
-        request: FastAPI Request object (optional).
 
     Returns:
         The active CurrentUser instance from CurrentUserProvider.

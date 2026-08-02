@@ -233,10 +233,8 @@ def test_assistant_chat_structured_response(api_client, db_session, monkeypatch)
 
     # Mock LLMParser to simulate intent parsing without needing a running Ollama server
     from app.assistant import LLMParser
-    def mock_parse_intent(self, prompt, session, *args, **kwargs):
+    def mock_parse_intent(self, prompt, session=None, *args, **kwargs):
         return {
-            "intent": "playlist_generation",
-            "confidence": 0.95,
             "plan": [
                 {
                     "action": "generate_playlist",
@@ -247,6 +245,7 @@ def test_assistant_chat_structured_response(api_client, db_session, monkeypatch)
                 }
             ]
         }
+
     monkeypatch.setattr(LLMParser, "parse_intent", mock_parse_intent)
 
     resp = api_client.post("/api/v1/assistant/chat", json={"message": "Songs for a rainy evening"})

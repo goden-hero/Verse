@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.database.models import Song, SemanticTags
+from app.identity import CurrentUser
 from app.services.playlist import (
     PlaylistCandidate,
     PlaylistService,
@@ -153,7 +154,9 @@ def test_verification_matrix_sparse_candidate_set(db_session: Session) -> None:
         db_session.add(t)
     db_session.commit()
 
+    user = CurrentUser(id=1, username="test_owner")
     playlist = PlaylistService.generate_playlist(
+        current_user=user,
         name="Niche Hyperpop Mix",
         strategy="hybrid",
         filters={"moods": ["hyperpop"]},
@@ -224,8 +227,10 @@ def test_verification_matrix_recommendation_expansion(db_session: Session) -> No
             for ru in rec_unrelated
         ]
 
+    user = CurrentUser(id=1, username="test_owner")
     with patch("app.services.recommendation.RecommendationService.recommend", side_effect=mock_recommend):
         playlist = PlaylistService.generate_playlist(
+            current_user=user,
             name="Acoustic Session",
             strategy="hybrid",
             filters={"moods": ["acoustic"]},

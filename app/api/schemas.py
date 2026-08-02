@@ -9,7 +9,7 @@ class SongResponse(BaseModel):
     album: Optional[str] = "Unknown"
     duration: Optional[float] = 0.0
     genre: Optional[str] = "Unknown"
-    artwork_available: bool
+    artwork_available: bool = False
     date_added: Optional[str] = None
 
     # Enable SQLAlchemy ORM mapping
@@ -66,11 +66,12 @@ class ChatRequest(BaseModel):
 
 
 
+from typing import Any, List, Optional
 class ChatStepResponse(BaseModel):
     """Pydantic model representing an execution step's result."""
     action: str
     status: str
-    output: Optional[dict] = None
+    output: Optional[Any] = None
     error: Optional[str] = None
 
 class PlaylistPreviewResponse(BaseModel):

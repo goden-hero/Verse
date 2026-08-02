@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.api.dependencies import get_db
+from app.api.dependencies import get_db, get_current_user, CurrentUser
 from app.api.schemas import (
     SongResponse,
     PlaylistGenerateRequest,
@@ -25,10 +25,10 @@ router = APIRouter(tags=["Playlists"])
 @router.post("/playlists/generate", response_model=List[SongResponse])
 def generate_playlist_preview(
     payload: PlaylistGenerateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Generates a list of recommended songs based on strategy and seeds without persisting to the database."""
-    # 1. Map strategy
     strategy_mapping = {
         "automatic": "hybrid",
         "similar vibe": "vector",
@@ -37,7 +37,6 @@ def generate_playlist_preview(
     }
     backend_strategy = strategy_mapping.get(payload.strategy.lower().strip(), payload.strategy.lower().strip())
 
-    # 2. Resolve seed type
     filters = {}
     stype = payload.seed_type.lower().strip()
     sval = payload.seed_value.strip()
@@ -119,6 +118,7 @@ def generate_playlist_preview(
 
     try:
         results = PlaylistService.generate_playlist_preview(
+            current_user=current_user,
             strategy=backend_strategy,
             filters=filters,
             target_length=payload.limit or 20,
@@ -134,18 +134,16 @@ def generate_playlist_preview(
 @router.post("/playlists", status_code=status.HTTP_201_CREATED)
 def create_playlist(
     payload: PlaylistCreateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Creates a new playlist and associates it with the provided list of song IDs."""
+    """Creates a new playlist for the current user and associates it with song IDs."""
     if not payload.name.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Playlist name cannot be empty."
         )
 
-    # The generated preview should already contain valid, distinct songs, but
-    # validating here prevents a foreign-key failure from leaving a playlist
-    # record behind without any tracks.
     song_ids = list(dict.fromkeys(payload.song_ids))
     found_song_ids = {
         song_id
@@ -160,6 +158,7 @@ def create_playlist(
 
     try:
         playlist_id = PlaylistService.create_playlist(
+            current_user=current_user,
             name=payload.name.strip(),
             prompt=None,
             strategy="custom",
@@ -168,6 +167,7 @@ def create_playlist(
             commit=False,
         )
         PlaylistService.add_songs_to_playlist(
+            current_user=current_user,
             playlist_id=playlist_id,
             song_ids=song_ids,
             session=db,
@@ -185,11 +185,12 @@ def create_playlist(
 @router.get("/playlists/continue-listening", response_model=List[ContinueListeningResponse])
 def get_continue_listening(
     limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Retrieves list of active unfinished playback sessions ordered by recency."""
+    """Retrieves list of active unfinished playback sessions for the current user."""
     try:
-        return PlaybackSessionService.get_continue_listening(limit=limit, session=db)
+        return PlaybackSessionService.get_continue_listening(current_user=current_user, limit=limit, session=db)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -200,11 +201,12 @@ def get_continue_listening(
 def list_playlists(
     section: str = Query("all", description="Section filter: 'recently_played', 'recently_added', or 'all'"),
     limit: int = Query(50, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Retrieves metadata of playlists with optional section filtering."""
+    """Retrieves metadata of playlists for the current user."""
     try:
-        return PlaylistService.get_playlists(session=db, section=section, limit=limit)
+        return PlaylistService.get_playlists(current_user=current_user, session=db, section=section, limit=limit)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -214,10 +216,11 @@ def list_playlists(
 @router.get("/playlists/{playlist_id}", response_model=PlaylistDetailResponse)
 def get_playlist(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Retrieves complete details of a single playlist including tracklist and AI metadata."""
-    playlist_details = PlaylistService.get_playlist_details(playlist_id, db)
+    """Retrieves complete details of a single user-owned playlist."""
+    playlist_details = PlaylistService.get_playlist_details(current_user, playlist_id, db)
     if not playlist_details:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -228,10 +231,11 @@ def get_playlist(
 @router.get("/playlists/{playlist_id}/stats", response_model=PlaylistStatsResponse)
 def get_playlist_stats(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Retrieves dynamic statistics (play_count, last_played_at, duration) for a playlist."""
-    details = PlaylistService.get_playlist_details(playlist_id, db)
+    """Retrieves dynamic statistics for a user-owned playlist."""
+    details = PlaylistService.get_playlist_details(current_user, playlist_id, db)
     if not details:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -248,10 +252,12 @@ def get_playlist_stats(
 def update_playlist(
     playlist_id: int,
     payload: PlaylistUpdateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Updates playlist name, description, or track ordering."""
+    """Updates name, description, or track ordering for a user-owned playlist."""
     success = PlaylistService.update_playlist(
+        current_user=current_user,
         playlist_id=playlist_id,
         name=payload.name,
         description=payload.description,
@@ -268,25 +274,26 @@ def update_playlist(
 @router.delete("/playlists/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_playlist(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Deletes a playlist by ID."""
-    PlaylistService.delete_playlist(playlist_id, db)
+    """Deletes a user-owned playlist by ID."""
+    PlaylistService.delete_playlist(current_user, playlist_id, db)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 @router.get("/playlists/{playlist_id}/songs", response_model=List[SongResponse])
 def get_playlist_songs(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Retrieves all songs belonging to a specific playlist, ordered by position."""
+    """Retrieves all songs belonging to a user-owned playlist."""
     try:
-        playlist_songs = PlaylistService.get_playlist_songs(playlist_id, db)
+        playlist_songs = PlaylistService.get_playlist_songs(current_user, playlist_id, db)
         if not playlist_songs:
             return []
         
         detailed_songs = []
-        from app.database.models import Song
         for ps in playlist_songs:
             song = db.get(Song, ps["id"])
             if song:
@@ -310,10 +317,11 @@ def get_playlist_songs(
 def start_playlist_playback(
     playlist_id: int,
     payload: Optional[PlaySessionStartRequest] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Triggers playback start for a playlist and creates a new PlaybackSession."""
-    playlist = PlaylistService.get_playlist_details(playlist_id, db)
+    playlist = PlaylistService.get_playlist_details(current_user, playlist_id, db)
     if not playlist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -324,6 +332,7 @@ def start_playlist_playback(
     position = payload.position if payload else 0.0
 
     psession = PlaybackSessionService.start_session(
+        current_user=current_user,
         playlist_id=playlist_id,
         song_index=song_index,
         position=position,
@@ -343,18 +352,18 @@ def start_playlist_playback(
 @router.post("/playlists/{playlist_id}/resume", response_model=PlaybackSessionResponse)
 def resume_playlist_playback(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Resumes active playback session for a playlist."""
-    playlist = PlaylistService.get_playlist_details(playlist_id, db)
+    playlist = PlaylistService.get_playlist_details(current_user, playlist_id, db)
     if not playlist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Playlist with ID {playlist_id} not found."
         )
 
-    # Find latest unfinished session
-    continue_sessions = PlaybackSessionService.get_continue_listening(limit=50, session=db)
+    continue_sessions = PlaybackSessionService.get_continue_listening(current_user=current_user, limit=50, session=db)
     target_session = next((s for s in continue_sessions if s["playlist_id"] == playlist_id), None)
 
     if target_session:
@@ -369,8 +378,8 @@ def resume_playlist_playback(
             "completed": False,
         }
     else:
-        # Start new session at 0
         psession = PlaybackSessionService.start_session(
+            current_user=current_user,
             playlist_id=playlist_id,
             song_index=0,
             position=0.0,
@@ -392,13 +401,15 @@ def update_playlist_playback_progress(
     playlist_id: int,
     session_id: int = Query(..., description="PlaybackSession ID to update"),
     payload: PlaySessionProgressRequest = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Syncs active session track index, position, and completion status."""
     if not payload:
         raise HTTPException(status_code=400, detail="Progress payload required.")
 
     updated = PlaybackSessionService.update_progress(
+        current_user=current_user,
         session_id=session_id,
         song_index=payload.song_index,
         position=payload.position,
@@ -415,7 +426,8 @@ def update_playlist_playback_progress(
 @router.get("/playlists/{playlist_id}/cover")
 def get_playlist_cover(
     playlist_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Streams dynamic composite cover artwork JPEG binary for a playlist."""
     try:
