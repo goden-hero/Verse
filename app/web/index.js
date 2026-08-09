@@ -194,6 +194,17 @@ function renderAuthenticatedUser() {
   if (authElements.accountDisplayName) authElements.accountDisplayName.textContent = displayName;
   if (authElements.accountUsername) authElements.accountUsername.textContent = `@${user.username}`;
   if (authElements.greeting) authElements.greeting.textContent = `Good Evening, ${displayName}`;
+
+  // Mobile User Elements
+  const mobileAvatar = document.getElementById('mobile-user-avatar');
+  const mobileAccAvatar = document.getElementById('mobile-account-avatar');
+  const mobileAccName = document.getElementById('mobile-account-name');
+  const mobileAccUsername = document.getElementById('mobile-account-username');
+
+  if (mobileAvatar) mobileAvatar.textContent = initial;
+  if (mobileAccAvatar) mobileAccAvatar.textContent = initial;
+  if (mobileAccName) mobileAccName.textContent = displayName;
+  if (mobileAccUsername) mobileAccUsername.textContent = `@${user.username}`;
 }
 
 async function bootstrapAuthentication() {
@@ -368,7 +379,8 @@ function initAuthEvents() {
 
 // 1. NAVIGATION / SPA ROUTING
 function initNavigation() {
-  elements.navItems.forEach(item => {
+  const allNavItems = document.querySelectorAll('.nav-item, .mobile-nav-item');
+  allNavItems.forEach(item => {
     item.addEventListener('click', () => {
       if (!currentState.auth.authenticated) {
         showAuthScreen('login');
@@ -376,10 +388,16 @@ function initNavigation() {
       }
 
       const targetViewId = item.getAttribute('data-target');
+      if (!targetViewId) return;
       
-      // Update active nav button
-      elements.navItems.forEach(nav => nav.classList.remove('active'));
-      item.classList.add('active');
+      // Update active nav button on all desktop & mobile bars
+      allNavItems.forEach(nav => {
+        if (nav.getAttribute('data-target') === targetViewId) {
+          nav.classList.add('active');
+        } else {
+          nav.classList.remove('active');
+        }
+      });
       
       // Update active view visibility
       elements.views.forEach(view => {
@@ -391,7 +409,10 @@ function initNavigation() {
       });
       
       currentState.activeTab = targetViewId;
-      console.log(`Navigated to: ${targetViewId}`);
+      
+      // Close mobile drawer if open
+      const mobileDrawerOverlay = document.getElementById('mobile-drawer-overlay');
+      if (mobileDrawerOverlay) mobileDrawerOverlay.classList.remove('active');
 
       // If returning home, restore full songs list and dynamic sections
       if (targetViewId === 'view-home') {
@@ -921,12 +942,16 @@ async function loadPlaylists() {
     if (!response.ok) throw new Error('Failed to fetch playlists');
     const playlists = await response.json();
     
+    const emptyHtml = `
+      <li style="font-size: 13px; color: var(--text-muted); padding: 8px; font-style: italic;">
+        No playlists saved yet.
+      </li>
+    `;
+
     if (playlists.length === 0) {
-      elements.sidebarPlaylists.innerHTML = `
-        <li style="font-size: 13px; color: var(--text-muted); padding: 8px; font-style: italic;">
-          No playlists saved yet.
-        </li>
-      `;
+      if (elements.sidebarPlaylists) elements.sidebarPlaylists.innerHTML = emptyHtml;
+      const mobileDrawerPlaylists = document.getElementById('mobile-drawer-playlists');
+      if (mobileDrawerPlaylists) mobileDrawerPlaylists.innerHTML = emptyHtml;
       return;
     }
     
@@ -942,19 +967,34 @@ async function loadPlaylists() {
         </li>
       `;
     });
-    elements.sidebarPlaylists.innerHTML = html;
     
-    // Wire click listener
-    const items = elements.sidebarPlaylists.querySelectorAll('.playlist-sidebar-item');
-    items.forEach(item => {
-      item.addEventListener('click', () => {
-        const playlistId = parseInt(item.getAttribute('data-playlist-id'));
-        openPlaylistDetail(playlistId);
+    if (elements.sidebarPlaylists) {
+      elements.sidebarPlaylists.innerHTML = html;
+      elements.sidebarPlaylists.querySelectorAll('.playlist-sidebar-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const playlistId = parseInt(item.getAttribute('data-playlist-id'));
+          openPlaylistDetail(playlistId);
+        });
       });
-    });
+    }
+
+    const mobileDrawerPlaylists = document.getElementById('mobile-drawer-playlists');
+    if (mobileDrawerPlaylists) {
+      mobileDrawerPlaylists.innerHTML = html;
+      mobileDrawerPlaylists.querySelectorAll('.playlist-sidebar-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const playlistId = parseInt(item.getAttribute('data-playlist-id'));
+          const mobileDrawerOverlay = document.getElementById('mobile-drawer-overlay');
+          if (mobileDrawerOverlay) mobileDrawerOverlay.classList.remove('active');
+          openPlaylistDetail(playlistId);
+        });
+      });
+    }
   } catch (err) {
     console.error(err);
-    elements.sidebarPlaylists.innerHTML = `<li style="font-size: 13px; color: #ef4444; padding: 8px;">Error loading playlists.</li>`;
+    if (elements.sidebarPlaylists) {
+      elements.sidebarPlaylists.innerHTML = `<li style="font-size: 13px; color: #ef4444; padding: 8px;">Error loading playlists.</li>`;
+    }
   }
 }
 
@@ -1636,6 +1676,7 @@ function updatePlaybackUI() {
   const song = currentState.currentPlayingSong;
   if (!song) return;
 
+  // Desktop player update
   if (elements.barTitle) elements.barTitle.innerText = song.title;
   if (elements.barArtist) elements.barArtist.innerText = song.artist;
 
@@ -1658,6 +1699,49 @@ function updatePlaybackUI() {
     const isLiked = currentState.likedSongIds.has(song.id);
     elements.barLikeBtn.innerHTML = isLiked ? SVG_ICONS.heartFilled : SVG_ICONS.heart;
   }
+
+  // --- MOBILE MINI PLAYER UPDATE ---
+  const mobileMiniTitle = document.getElementById('mobile-mini-title');
+  const mobileMiniArtist = document.getElementById('mobile-mini-artist');
+  const mobileMiniArt = document.getElementById('mobile-mini-art');
+  const mobileMiniBtnPlay = document.getElementById('mobile-mini-btn-play');
+
+  if (mobileMiniTitle) mobileMiniTitle.innerText = song.title;
+  if (mobileMiniArtist) mobileMiniArtist.innerText = song.artist;
+  if (mobileMiniArt) {
+    mobileMiniArt.innerHTML = song.artwork_available
+      ? `<img src="/api/v1/songs/${song.id}/artwork" alt="art" onerror="this.style.display='none';">`
+      : SVG_ICONS.music;
+  }
+  if (mobileMiniBtnPlay) {
+    mobileMiniBtnPlay.innerHTML = currentState.isPlaying ? SVG_ICONS.pause : SVG_ICONS.play;
+  }
+
+  // --- FULL MOBILE PLAYER UPDATE ---
+  const mobileFullTitle = document.getElementById('mobile-full-title');
+  const mobileFullArtist = document.getElementById('mobile-full-artist');
+  const mobileFullArt = document.getElementById('mobile-full-art');
+  const mobileFullBtnPlay = document.getElementById('mobile-full-btn-play');
+  const mobileFullLikeBtn = document.getElementById('mobile-full-like-btn');
+  const mobileFullBtnPrev = document.getElementById('mobile-full-btn-prev');
+  const mobileFullBtnNext = document.getElementById('mobile-full-btn-next');
+
+  if (mobileFullTitle) mobileFullTitle.innerText = song.title;
+  if (mobileFullArtist) mobileFullArtist.innerText = song.artist;
+  if (mobileFullArt) {
+    mobileFullArt.innerHTML = song.artwork_available
+      ? `<img src="/api/v1/songs/${song.id}/artwork" alt="art" onerror="this.style.display='none';">`
+      : SVG_ICONS.music;
+  }
+  if (mobileFullBtnPlay) {
+    mobileFullBtnPlay.innerHTML = currentState.isPlaying ? SVG_ICONS.pause : SVG_ICONS.play;
+  }
+  if (mobileFullLikeBtn) {
+    const isLiked = currentState.likedSongIds.has(song.id);
+    mobileFullLikeBtn.innerHTML = isLiked ? SVG_ICONS.heartFilled : SVG_ICONS.heart;
+  }
+  if (mobileFullBtnPrev) mobileFullBtnPrev.disabled = currentState.queueIndex <= 0;
+  if (mobileFullBtnNext) mobileFullBtnNext.disabled = currentState.queueIndex >= currentState.queue.length - 1;
 }
 
 function updateRightSidebarNowPlaying(song) {
@@ -1729,11 +1813,14 @@ async function fetchRecommendationsForSong(songId) {
 
 function renderQueueList() {
   const queueList = document.getElementById('np-queue-list');
-  if (!queueList) return;
+  const mobileQueueList = document.getElementById('mobile-full-queue-list');
 
   const remainingQueue = currentState.queue.slice(currentState.queueIndex + 1);
+  const emptyHtml = `<li class="queue-empty-item">Queue is empty</li>`;
+
   if (remainingQueue.length === 0) {
-    queueList.innerHTML = `<li class="queue-empty-item">Queue is empty</li>`;
+    if (queueList) queueList.innerHTML = emptyHtml;
+    if (mobileQueueList) mobileQueueList.innerHTML = emptyHtml;
     return;
   }
 
@@ -1753,17 +1840,30 @@ function renderQueueList() {
       </li>
     `;
   });
-  queueList.innerHTML = html;
 
-  const items = queueList.querySelectorAll('.sidebar-track-item');
-  items.forEach(item => {
-    item.addEventListener('click', () => {
-      const idx = parseInt(item.getAttribute('data-queue-idx'));
-      if (currentState.queue[idx]) {
-        playSong(currentState.queue[idx], currentState.queue);
-      }
+  if (queueList) {
+    queueList.innerHTML = html;
+    queueList.querySelectorAll('.sidebar-track-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const idx = parseInt(item.getAttribute('data-queue-idx'));
+        if (currentState.queue[idx]) {
+          playSong(currentState.queue[idx], currentState.queue);
+        }
+      });
     });
-  });
+  }
+
+  if (mobileQueueList) {
+    mobileQueueList.innerHTML = html;
+    mobileQueueList.querySelectorAll('.sidebar-track-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const idx = parseInt(item.getAttribute('data-queue-idx'));
+        if (currentState.queue[idx]) {
+          playSong(currentState.queue[idx], currentState.queue);
+        }
+      });
+    });
+  }
 }
 
 function initAudioPlayerEvents() {
@@ -1833,11 +1933,25 @@ function initAudioPlayerEvents() {
     const pct = (audio.currentTime / audio.duration) * 100;
     if (elements.barProgressSlider) elements.barProgressSlider.value = pct;
     if (elements.barTimeCurrent) elements.barTimeCurrent.innerText = formatDuration(audio.currentTime);
+
+    // Sync Mobile Mini Player Progress Bar
+    const mobileMiniProgress = document.getElementById('mobile-mini-progress-bar');
+    if (mobileMiniProgress) mobileMiniProgress.style.width = `${pct}%`;
+
+    // Sync Full Mobile Player Progress Slider & Time
+    const mobileFullProgressSlider = document.getElementById('mobile-full-progress-slider');
+    const mobileFullTimeCurrent = document.getElementById('mobile-full-time-current');
+    if (mobileFullProgressSlider) mobileFullProgressSlider.value = pct;
+    if (mobileFullTimeCurrent) mobileFullTimeCurrent.innerText = formatDuration(audio.currentTime);
+
     syncSessionProgress(false);
   });
 
   audio.addEventListener('loadedmetadata', () => {
-    if (elements.barTimeTotal) elements.barTimeTotal.innerText = formatDuration(audio.duration);
+    const totalStr = formatDuration(audio.duration);
+    if (elements.barTimeTotal) elements.barTimeTotal.innerText = totalStr;
+    const mobileFullTimeTotal = document.getElementById('mobile-full-time-total');
+    if (mobileFullTimeTotal) mobileFullTimeTotal.innerText = totalStr;
   });
 
   audio.addEventListener('ended', () => {
@@ -2134,6 +2248,43 @@ function renderAssistantSidebarPlaylist(playlist) {
       sendAssistantPrompt("Regenerate playlist preview");
     };
   }
+
+  // On mobile screen width (< 768), show mobile assistant drawer modal
+  if (window.innerWidth < 768) {
+    const mobileOverlay = document.getElementById('mobile-assistant-drawer-overlay');
+    const mobileContent = document.getElementById('mobile-assistant-drawer-content');
+    if (mobileOverlay && mobileContent && assistantSidebar) {
+      mobileContent.innerHTML = assistantSidebar.innerHTML;
+      mobileOverlay.classList.add('active');
+
+      const mBtnPlayAll = mobileContent.querySelector('#btn-assistant-play-all');
+      if (mBtnPlayAll) {
+        mBtnPlayAll.onclick = () => {
+          if (playlist.songs && playlist.songs.length > 0) {
+            playSong(playlist.songs[0], playlist.songs);
+          }
+        };
+      }
+      const mBtnSave = mobileContent.querySelector('#btn-save-assistant-playlist');
+      if (mBtnSave) {
+        mBtnSave.onclick = () => savePlaylistPreview(playlist, mBtnSave);
+      }
+      const mBtnRegen = mobileContent.querySelector('#btn-sidebar-regen');
+      if (mBtnRegen) {
+        mBtnRegen.onclick = () => {
+          mobileOverlay.classList.remove('active');
+          sendAssistantPrompt("Regenerate playlist preview");
+        };
+      }
+      mobileContent.querySelectorAll('tr[data-song-id]').forEach(r => {
+        r.addEventListener('click', () => {
+          const id = parseInt(r.getAttribute('data-song-id'));
+          const song = playlist.songs.find(s => s.id === id);
+          if (song) playSong(song, playlist.songs);
+        });
+      });
+    }
+  }
 }
 
 function renderChatMessages() {
@@ -2274,7 +2425,180 @@ function renderChatMessages() {
 }
 
 // ==========================================
-// 8. BOOTSTRAP INITIALIZATION
+// 8. MOBILE INTERACTION & MODALS CONTROLLER
+// ==========================================
+function initMobileEvents() {
+  // Mobile Search Header Button
+  const mobileBtnSearch = document.getElementById('mobile-btn-search');
+  if (mobileBtnSearch) {
+    mobileBtnSearch.addEventListener('click', () => showSearchOverlay());
+  }
+
+  // Mobile Drawer Toggles
+  const mobileBtnDrawer = document.getElementById('mobile-btn-drawer');
+  const mobileNavMenu = document.getElementById('mobile-nav-menu');
+  const mobileDrawerOverlay = document.getElementById('mobile-drawer-overlay');
+  const mobileDrawerClose = document.getElementById('mobile-drawer-close');
+
+  function openMobileDrawer() {
+    if (mobileDrawerOverlay) mobileDrawerOverlay.classList.add('active');
+  }
+  function closeMobileDrawer() {
+    if (mobileDrawerOverlay) mobileDrawerOverlay.classList.remove('active');
+  }
+
+  if (mobileBtnDrawer) mobileBtnDrawer.addEventListener('click', openMobileDrawer);
+  if (mobileNavMenu) mobileNavMenu.addEventListener('click', openMobileDrawer);
+  if (mobileDrawerClose) mobileDrawerClose.addEventListener('click', closeMobileDrawer);
+  if (mobileDrawerOverlay) {
+    mobileDrawerOverlay.addEventListener('click', (e) => {
+      if (e.target === mobileDrawerOverlay) closeMobileDrawer();
+    });
+  }
+
+  // Mobile Drawer Navigation Links
+  const mobileLibFavorites = document.getElementById('mobile-lib-favorites');
+  const mobileLibRecent = document.getElementById('mobile-lib-recent');
+  const mobileLibDownloads = document.getElementById('mobile-lib-downloads');
+  const mobileBtnLogout = document.getElementById('mobile-btn-logout');
+
+  if (mobileLibFavorites) {
+    mobileLibFavorites.addEventListener('click', () => {
+      closeMobileDrawer();
+      const navHome = document.getElementById('nav-home');
+      if (navHome) navHome.click();
+    });
+  }
+  if (mobileLibRecent) {
+    mobileLibRecent.addEventListener('click', () => {
+      closeMobileDrawer();
+      const navHome = document.getElementById('nav-home');
+      if (navHome) navHome.click();
+    });
+  }
+  if (mobileLibDownloads) {
+    mobileLibDownloads.addEventListener('click', () => {
+      closeMobileDrawer();
+      const navHome = document.getElementById('nav-home');
+      if (navHome) navHome.click();
+    });
+  }
+  if (mobileBtnLogout) {
+    mobileBtnLogout.addEventListener('click', () => {
+      closeMobileDrawer();
+      handleLogout();
+    });
+  }
+
+  // Mobile Mini Player -> Expand Full Player
+  const miniTrigger = document.getElementById('mobile-mini-player-trigger');
+  const mobileFullPlayer = document.getElementById('mobile-full-player');
+  const mobilePlayerClose = document.getElementById('mobile-player-close');
+
+  if (miniTrigger && mobileFullPlayer) {
+    miniTrigger.addEventListener('click', (e) => {
+      if (e.target.closest('.mini-player-btn')) return;
+      mobileFullPlayer.classList.add('active');
+    });
+  }
+  if (mobilePlayerClose && mobileFullPlayer) {
+    mobilePlayerClose.addEventListener('click', () => {
+      mobileFullPlayer.classList.remove('active');
+    });
+  }
+
+  // Mobile Mini Player Controls
+  const mobileMiniBtnPlay = document.getElementById('mobile-mini-btn-play');
+  const mobileMiniBtnNext = document.getElementById('mobile-mini-btn-next');
+  if (mobileMiniBtnPlay) mobileMiniBtnPlay.addEventListener('click', togglePlayPause);
+  if (mobileMiniBtnNext) mobileMiniBtnNext.addEventListener('click', playNextSong);
+
+  // Mobile Full Player Controls
+  const mobileFullBtnPlay = document.getElementById('mobile-full-btn-play');
+  const mobileFullBtnNext = document.getElementById('mobile-full-btn-next');
+  const mobileFullBtnPrev = document.getElementById('mobile-full-btn-prev');
+  const mobileFullBtnShuffle = document.getElementById('mobile-full-btn-shuffle');
+  const mobileFullBtnRepeat = document.getElementById('mobile-full-btn-repeat');
+  const mobileFullLikeBtn = document.getElementById('mobile-full-like-btn');
+  const mobileFullProgressSlider = document.getElementById('mobile-full-progress-slider');
+  const mobileFullVolumeSlider = document.getElementById('mobile-full-volume-slider');
+  const mobileFullBtnVolume = document.getElementById('mobile-full-btn-volume');
+
+  if (mobileFullBtnPlay) mobileFullBtnPlay.addEventListener('click', togglePlayPause);
+  if (mobileFullBtnNext) mobileFullBtnNext.addEventListener('click', playNextSong);
+  if (mobileFullBtnPrev) mobileFullBtnPrev.addEventListener('click', playPrevSong);
+
+  if (mobileFullLikeBtn) {
+    mobileFullLikeBtn.addEventListener('click', () => {
+      if (currentState.currentPlayingSong) {
+        toggleLikeSong(currentState.currentPlayingSong.id);
+      }
+    });
+  }
+  if (mobileFullBtnShuffle) {
+    mobileFullBtnShuffle.addEventListener('click', () => {
+      currentState.isShuffle = !currentState.isShuffle;
+      mobileFullBtnShuffle.classList.toggle('active-state', currentState.isShuffle);
+    });
+  }
+  if (mobileFullBtnRepeat) {
+    mobileFullBtnRepeat.addEventListener('click', () => {
+      currentState.isRepeat = !currentState.isRepeat;
+      mobileFullBtnRepeat.classList.toggle('active-state', currentState.isRepeat);
+    });
+  }
+
+  if (mobileFullBtnVolume) {
+    mobileFullBtnVolume.addEventListener('click', () => {
+      const audio = elements.audio;
+      if (!audio) return;
+      if (audio.volume > 0) {
+        audio.dataset.prevVolume = audio.volume;
+        audio.volume = 0;
+        if (mobileFullVolumeSlider) mobileFullVolumeSlider.value = 0;
+      } else {
+        const prev = parseFloat(audio.dataset.prevVolume || '0.7');
+        audio.volume = prev;
+        if (mobileFullVolumeSlider) mobileFullVolumeSlider.value = prev * 100;
+      }
+    });
+  }
+
+  if (mobileFullProgressSlider) {
+    mobileFullProgressSlider.addEventListener('input', (e) => {
+      const audio = elements.audio;
+      if (audio && audio.duration) {
+        audio.currentTime = (parseFloat(e.target.value) / 100) * audio.duration;
+      }
+    });
+  }
+
+  if (mobileFullVolumeSlider) {
+    mobileFullVolumeSlider.addEventListener('input', (e) => {
+      const audio = elements.audio;
+      if (audio) audio.volume = parseFloat(e.target.value) / 100;
+    });
+  }
+
+  // Mobile Assistant Drawer Close
+  const btnCloseMobileAssistantDrawer = document.getElementById('btn-close-mobile-assistant-drawer');
+  const mobileAssistantDrawerOverlay = document.getElementById('mobile-assistant-drawer-overlay');
+  if (btnCloseMobileAssistantDrawer && mobileAssistantDrawerOverlay) {
+    btnCloseMobileAssistantDrawer.addEventListener('click', () => {
+      mobileAssistantDrawerOverlay.classList.remove('active');
+    });
+  }
+  if (mobileAssistantDrawerOverlay) {
+    mobileAssistantDrawerOverlay.addEventListener('click', (e) => {
+      if (e.target === mobileAssistantDrawerOverlay) {
+        mobileAssistantDrawerOverlay.classList.remove('active');
+      }
+    });
+  }
+}
+
+// ==========================================
+// 9. BOOTSTRAP INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   console.log("Verse Web interface initialized.");
@@ -2286,6 +2610,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAssistantEvents();
   initAudioPlayerEvents();
   initResizers();
+  initMobileEvents();
 
   bootstrapAuthentication();
 });
