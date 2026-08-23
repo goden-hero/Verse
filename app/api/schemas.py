@@ -28,6 +28,9 @@ class PlaylistGenerateRequest(BaseModel):
     strategy: str
     seed_type: str
     seed_value: str
+    # Current-song and current-queue UI modes use stable library song IDs.  Keep
+    # seed_value for manual title/mood/activity modes and backwards compatibility.
+    seed_song_ids: List[int] = Field(default_factory=list)
     limit: Optional[int] = 20
 
 class PlaylistCreateRequest(BaseModel):

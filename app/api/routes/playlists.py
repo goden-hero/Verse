@@ -42,10 +42,39 @@ def generate_playlist_preview(
     sval = payload.seed_value.strip()
 
     if stype in ["current song", "current queue"]:
-        if sval:
-            filters["seed_song_title"] = sval
-        else:
-            from app.database.models import ListeningHistory, Song
+        # The web player supplies library IDs, not titles.  Resolving a value
+        # such as "42" through a title search caused the previous UI fix to
+        # choose arbitrary titles containing that number.
+        seed_song_ids = list(dict.fromkeys(payload.seed_song_ids))
+        if not seed_song_ids and sval:
+            try:
+                seed_song_ids = [int(sval)]
+            except ValueError:
+                # Preserve compatibility with older clients that supplied a
+                # title for these modes.
+                filters["seed_song_title"] = sval
+
+        if seed_song_ids:
+            found_song_ids = {
+                song_id
+                for (song_id,) in db.query(Song.id).filter(Song.id.in_(seed_song_ids)).all()
+            }
+            missing_song_ids = [song_id for song_id in seed_song_ids if song_id not in found_song_ids]
+            if missing_song_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"One or more seed songs no longer exist: {missing_song_ids}.",
+                )
+            filters["seed_song_ids"] = seed_song_ids
+        elif stype == "current queue":
+            # The browser queue is session-local; an empty queue must not
+            # silently become another user's/global last-played song.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current queue is empty. Add songs to the queue before generating a playlist.",
+            )
+        elif "seed_song_title" not in filters:
+            from app.database.models import ListeningHistory
             last_played_rec = db.query(ListeningHistory).filter(ListeningHistory.last_played != None).order_by(ListeningHistory.last_played.desc()).first()
             if last_played_rec:
                 song = db.get(Song, last_played_rec.song_id)
@@ -64,7 +93,7 @@ def generate_playlist_preview(
         if sval:
             filters["seed_song_title"] = sval
         else:
-            from app.database.models import ListeningHistory, Song
+            from app.database.models import ListeningHistory
             import random
             favs = db.query(ListeningHistory).filter(ListeningHistory.likes == True).all()
             if favs:

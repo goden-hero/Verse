@@ -230,12 +230,19 @@ def _build_shortfall_metadata(requested_length: int, found_length: int) -> dict:
 
 
 def _retrieve_initial_candidates(filters: dict, session: Session) -> list[PlaylistCandidate]:
-    seed_song = _find_seed_song(filters.get("seed_song_title"), session)
-    seed_candidate = (
-        [PlaylistCandidate(song_id=seed_song.id, source="seed", similarity_score=1.0, confidence=1.0)]
-        if seed_song
-        else []
-    )
+    seed_song_ids = filters.get("seed_song_ids", [])
+    seed_candidates = [
+        PlaylistCandidate(song_id=song_id, source="seed", similarity_score=1.0, confidence=1.0)
+        for song_id in seed_song_ids
+        if session.get(Song, song_id)
+    ]
+    if not seed_candidates:
+        seed_song = _find_seed_song(filters.get("seed_song_title"), session)
+        seed_candidates = (
+            [PlaylistCandidate(song_id=seed_song.id, source="seed", similarity_score=1.0, confidence=1.0)]
+            if seed_song
+            else []
+        )
 
     semantic_songs = SearchService.semantic_search(
         moods=filters.get("moods", []),
@@ -249,7 +256,7 @@ def _retrieve_initial_candidates(filters: dict, session: Session) -> list[Playli
         for song in semantic_songs
     ]
 
-    return _dedupe_candidates([*seed_candidate, *semantic_candidates])
+    return _dedupe_candidates([*seed_candidates, *semantic_candidates])
 
 
 def _retrieve_fallback_seeds(filters: dict, session: Session) -> list[PlaylistCandidate]:
@@ -332,7 +339,7 @@ def _construct_playlist_candidates(
     target_length: int,
     session: Session,
 ) -> list[PlaylistCandidate]:
-    if not filters.get("seed_song_title") and not filters.get("moods") and not filters.get("activities") and filters.get("energy_min") is None and filters.get("energy_max") is None:
+    if not filters.get("seed_song_ids") and not filters.get("seed_song_title") and not filters.get("moods") and not filters.get("activities") and filters.get("energy_min") is None and filters.get("energy_max") is None:
         return []
 
     strategy = map_ui_to_backend_strategy(strategy, session)

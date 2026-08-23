@@ -218,6 +218,57 @@ def test_generate_playlist_preview_endpoint(api_client, db_session):
     assert len(songs) >= 1
     assert songs[0]["title"] == "Sample Song"
 
+
+def test_generate_playlist_preview_uses_stable_song_ids_for_current_seeds(api_client, db_session, monkeypatch):
+    """Current player/queue IDs must reach the recommender without title matching."""
+    song_a = Song(path="/a.mp3", hash="seed-a", title="Unrelated Title", artist="A", duration=120.0)
+    song_b = Song(path="/b.mp3", hash="seed-b", title="Another Title", artist="B", duration=120.0)
+    db_session.add_all([song_a, song_b])
+    db_session.commit()
+
+    captured_calls = []
+
+    def capture_generation(**kwargs):
+        captured_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(PlaylistService, "generate_playlist_preview", staticmethod(capture_generation))
+
+    song_response = api_client.post("/api/v1/playlists/generate", json={
+        "strategy": "similar vibe",
+        "seed_type": "current song",
+        "seed_value": str(song_a.id),
+        "seed_song_ids": [song_a.id],
+        "limit": 10,
+    })
+    queue_response = api_client.post("/api/v1/playlists/generate", json={
+        "strategy": "similar sound",
+        "seed_type": "current queue",
+        "seed_value": str(song_b.id),
+        "seed_song_ids": [song_b.id, song_a.id],
+        "limit": 10,
+    })
+
+    assert song_response.status_code == 200
+    assert queue_response.status_code == 200
+    assert captured_calls[0]["strategy"] == "vector"
+    assert captured_calls[0]["filters"] == {"seed_song_ids": [song_a.id]}
+    assert captured_calls[1]["strategy"] == "content"
+    assert captured_calls[1]["filters"] == {"seed_song_ids": [song_b.id, song_a.id]}
+
+
+def test_generate_playlist_preview_rejects_empty_current_queue(api_client):
+    response = api_client.post("/api/v1/playlists/generate", json={
+        "strategy": "similar vibe",
+        "seed_type": "current queue",
+        "seed_value": "",
+        "seed_song_ids": [],
+        "limit": 10,
+    })
+
+    assert response.status_code == 400
+    assert "Current queue is empty" in response.json()["detail"]
+
 def test_assistant_chat_structured_response(api_client, db_session, monkeypatch):
     """Tests POST /api/v1/assistant/chat returning structured JSON with playlist preview."""
     import json
@@ -285,7 +336,6 @@ def test_playlist_management_full_flow(api_client, db_session):
     assert len(p_songs) == 1
     assert p_songs[0]["id"] == song.id
     assert p_songs[0]["title"] == "Track One"
-
 
 
 

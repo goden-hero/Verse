@@ -93,6 +93,7 @@ async function runTests() {
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current song');
     assert.strictEqual(payload.seed_value, '101');
+    assert.deepStrictEqual(payload.seed_song_ids, [101]);
     console.log('✔ Test 1 Passed: Song A ID (101) correctly sent as seed_value');
   }
 
@@ -113,6 +114,7 @@ async function runTests() {
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current song');
     assert.strictEqual(payload.seed_value, '202');
+    assert.deepStrictEqual(payload.seed_song_ids, [202]);
     console.log('✔ Test 2 Passed: Changing current song from 101 to 202 updates seed_value');
   }
 
@@ -128,6 +130,7 @@ async function runTests() {
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current song');
     assert.strictEqual(payload.seed_value, '');
+    assert.deepStrictEqual(payload.seed_song_ids, []);
     console.log('✔ Test 3 Passed: No current song sends empty seed_value gracefully');
   }
 
@@ -144,7 +147,8 @@ async function runTests() {
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current queue');
     assert.strictEqual(payload.seed_value, '55');
-    console.log('✔ Test 4 Passed: Current Queue seed transmission uses active queue song ID (55)');
+    assert.deepStrictEqual(payload.seed_song_ids, [55, 56]);
+    console.log('✔ Test 4 Passed: Current Queue seed transmission uses all queue song IDs');
   }
 
   console.log('\nAll Frontend Seed Transmission Tests Passed Successfully!');
