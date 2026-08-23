@@ -799,8 +799,26 @@ async function handleGeneratePlaylist(e) {
   
   const strategy = elements.playlistStrategy.value;
   const seedType = elements.playlistSeedType.value;
-  const seedValue = elements.playlistSeedValue.value.trim();
+  let seedValue = elements.playlistSeedValue.value.trim();
   const limit = parseInt(elements.playlistLimit.value) || 20;
+  
+  if (seedType === 'current song') {
+    if (currentState.currentPlayingSong && currentState.currentPlayingSong.id !== undefined && currentState.currentPlayingSong.id !== null) {
+      seedValue = String(currentState.currentPlayingSong.id);
+    }
+  } else if (seedType === 'current queue') {
+    let queueSong = null;
+    if (currentState.queueIndex >= 0 && currentState.queueIndex < currentState.queue.length) {
+      queueSong = currentState.queue[currentState.queueIndex];
+    } else if (currentState.queue && currentState.queue.length > 0) {
+      queueSong = currentState.queue[0];
+    } else if (currentState.currentPlayingSong) {
+      queueSong = currentState.currentPlayingSong;
+    }
+    if (queueSong && queueSong.id !== undefined && queueSong.id !== null) {
+      seedValue = String(queueSong.id);
+    }
+  }
   
   // Validate seed value only for manual seed types
   const requiresSeedValue = ['song', 'mood', 'activity'].includes(seedType);
