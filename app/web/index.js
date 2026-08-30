@@ -20,8 +20,16 @@ let currentState = {
   likedSongIds: new Set(),
   activePlaylistId: null,
   activeSessionId: null,
-  lastProgressSync: 0
+  lastProgressSync: 0,
+  isRepeat: false
 };
+
+Object.defineProperty(currentState, 'isLooping', {
+  get() { return this.isRepeat; },
+  set(val) { this.isRepeat = Boolean(val); },
+  configurable: true,
+  enumerable: true
+});
 
 const nativeFetch = window.fetch.bind(window);
 window.fetch = (input, init = {}) => {
@@ -1697,7 +1705,21 @@ async function toggleLikeSong(songId) {
   renderSongsTable();
 }
 
+function updateLoopUI() {
+  const isLooping = Boolean(currentState.isRepeat || currentState.isLooping);
+  if (elements.barBtnRepeat) {
+    elements.barBtnRepeat.classList.toggle('active', isLooping);
+    elements.barBtnRepeat.classList.toggle('active-state', isLooping);
+  }
+  const mobileFullBtnRepeat = document.getElementById('mobile-full-btn-repeat');
+  if (mobileFullBtnRepeat) {
+    mobileFullBtnRepeat.classList.toggle('active', isLooping);
+    mobileFullBtnRepeat.classList.toggle('active-state', isLooping);
+  }
+}
+
 function updatePlaybackUI() {
+  updateLoopUI();
   const song = currentState.currentPlayingSong;
   if (!song) return;
 
@@ -1921,7 +1943,7 @@ function initAudioPlayerEvents() {
   if (elements.barBtnRepeat) {
     elements.barBtnRepeat.addEventListener('click', () => {
       currentState.isRepeat = !currentState.isRepeat;
-      elements.barBtnRepeat.classList.toggle('active', currentState.isRepeat);
+      updateLoopUI();
     });
   }
   if (elements.barBtnVolume) {
@@ -1981,8 +2003,21 @@ function initAudioPlayerEvents() {
 
   audio.addEventListener('ended', () => {
     syncSessionProgress(true);
-    playNextSong();
+    if ((currentState.isRepeat || currentState.isLooping) && currentState.currentPlayingSong) {
+      audio.currentTime = 0;
+      audio.play().then(() => {
+        currentState.isPlaying = true;
+        updatePlaybackUI();
+      }).catch((e) => {
+        console.error("Loop playback replay failed:", e);
+        playSong(currentState.currentPlayingSong);
+      });
+    } else {
+      playNextSong();
+    }
   });
+
+  updateLoopUI();
 }
 
 // ==========================================
@@ -2569,7 +2604,7 @@ function initMobileEvents() {
   if (mobileFullBtnRepeat) {
     mobileFullBtnRepeat.addEventListener('click', () => {
       currentState.isRepeat = !currentState.isRepeat;
-      mobileFullBtnRepeat.classList.toggle('active-state', currentState.isRepeat);
+      updateLoopUI();
     });
   }
 
