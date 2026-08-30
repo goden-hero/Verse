@@ -809,7 +809,14 @@ async function handleGeneratePlaylist(e) {
       seedSongIds = [currentState.currentPlayingSong.id];
     }
   } else if (seedType === 'current queue') {
+    const queueStart = currentState.queueIndex >= 0 && currentState.queueIndex < currentState.queue.length
+      ? currentState.queueIndex
+      : 0;
+    // The queue may be a full library/playlist context.  A "current queue"
+    // playlist must start with the active song, followed by upcoming songs;
+    // otherwise every playback position shares the same first seed tracks.
     seedSongIds = (currentState.queue || [])
+      .slice(queueStart)
       .map(song => song && song.id)
       .filter(id => id !== undefined && id !== null);
     if (seedSongIds.length === 0 && currentState.currentPlayingSong && currentState.currentPlayingSong.id !== undefined && currentState.currentPlayingSong.id !== null) {

@@ -84,6 +84,7 @@ async function runTests() {
   // Test 1: Current Song selected with Song A (id: 101)
   {
     const env = createTestEnv();
+    env.elementsMock.playlistStrategy.value = 'similar vibe';
     env.elementsMock.playlistSeedType.value = 'current song';
     env.currentStateMock.currentPlayingSong = { id: 101, title: 'Song A' };
 
@@ -92,6 +93,7 @@ async function runTests() {
 
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current song');
+    assert.strictEqual(payload.strategy, 'similar vibe');
     assert.strictEqual(payload.seed_value, '101');
     assert.deepStrictEqual(payload.seed_song_ids, [101]);
     console.log('✔ Test 1 Passed: Song A ID (101) correctly sent as seed_value');
@@ -100,6 +102,7 @@ async function runTests() {
   // Test 2: Changing currently playing song to Song B (id: 202) updates seed_value
   {
     const env = createTestEnv();
+    env.elementsMock.playlistStrategy.value = 'similar sound';
     env.elementsMock.playlistSeedType.value = 'current song';
     
     // First play Song A
@@ -113,6 +116,7 @@ async function runTests() {
     await env.handleGeneratePlaylist(eventMock);
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current song');
+    assert.strictEqual(payload.strategy, 'similar sound');
     assert.strictEqual(payload.seed_value, '202');
     assert.deepStrictEqual(payload.seed_song_ids, [202]);
     console.log('✔ Test 2 Passed: Changing current song from 101 to 202 updates seed_value');
@@ -137,18 +141,53 @@ async function runTests() {
   // Test 4: Current Queue selected with queue populated
   {
     const env = createTestEnv();
+    env.elementsMock.playlistStrategy.value = 'similar vibe';
     env.elementsMock.playlistSeedType.value = 'current queue';
-    env.currentStateMock.queue = [{ id: 55, title: 'Queue Song 1' }, { id: 56, title: 'Queue Song 2' }];
-    env.currentStateMock.queueIndex = 0;
+    env.currentStateMock.queue = [{ id: 44, title: 'Already Played' }, { id: 55, title: 'Queue Song 1' }, { id: 56, title: 'Queue Song 2' }];
+    env.currentStateMock.queueIndex = 1;
 
     const eventMock = { preventDefault: () => {} };
     await env.handleGeneratePlaylist(eventMock);
 
     const payload = env.getLastFetchPayload();
     assert.strictEqual(payload.seed_type, 'current queue');
+    assert.strictEqual(payload.strategy, 'similar vibe');
     assert.strictEqual(payload.seed_value, '55');
     assert.deepStrictEqual(payload.seed_song_ids, [55, 56]);
-    console.log('✔ Test 4 Passed: Current Queue seed transmission uses all queue song IDs');
+    console.log('✔ Test 4 Passed: Current Queue starts with the active song and sends upcoming IDs');
+  }
+
+  // Test 5: A different queue is sent intact for Similar Sound
+  {
+    const env = createTestEnv();
+    env.elementsMock.playlistStrategy.value = 'similar sound';
+    env.elementsMock.playlistSeedType.value = 'current queue';
+    env.currentStateMock.queue = [{ id: 66, title: 'Already Played' }, { id: 77, title: 'Queue Song A' }, { id: 88, title: 'Queue Song B' }];
+    env.currentStateMock.queueIndex = 1;
+
+    await env.handleGeneratePlaylist({ preventDefault: () => {} });
+
+    const payload = env.getLastFetchPayload();
+    assert.strictEqual(payload.seed_type, 'current queue');
+    assert.strictEqual(payload.strategy, 'similar sound');
+    assert.strictEqual(payload.seed_value, '77');
+    assert.deepStrictEqual(payload.seed_song_ids, [77, 88]);
+    console.log('✔ Test 5 Passed: Similar Sound receives the changed queue IDs');
+  }
+
+  // Test 6: Manual seed values remain unchanged
+  {
+    const env = createTestEnv();
+    env.elementsMock.playlistSeedType.value = 'song';
+    env.elementsMock.playlistSeedValue.value = 'Manual Seed Song';
+
+    await env.handleGeneratePlaylist({ preventDefault: () => {} });
+
+    const payload = env.getLastFetchPayload();
+    assert.strictEqual(payload.seed_type, 'song');
+    assert.strictEqual(payload.seed_value, 'Manual Seed Song');
+    assert.deepStrictEqual(payload.seed_song_ids, []);
+    console.log('✔ Test 6 Passed: Manual seed mode is unchanged');
   }
 
   console.log('\nAll Frontend Seed Transmission Tests Passed Successfully!');

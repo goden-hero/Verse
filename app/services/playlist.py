@@ -244,19 +244,36 @@ def _retrieve_initial_candidates(filters: dict, session: Session) -> list[Playli
             else []
         )
 
-    semantic_songs = SearchService.semantic_search(
-        moods=filters.get("moods", []),
-        activities=filters.get("activities", []),
-        energy_min=filters.get("energy_min"),
-        energy_max=filters.get("energy_max"),
-        session=session,
+    has_semantic_filters = (
+        bool(filters.get("moods"))
+        or bool(filters.get("activities"))
+        or filters.get("energy_min") is not None
+        or filters.get("energy_max") is not None
+    )
+    semantic_songs = (
+        SearchService.semantic_search(
+            moods=filters.get("moods", []),
+            activities=filters.get("activities", []),
+            energy_min=filters.get("energy_min"),
+            energy_max=filters.get("energy_max"),
+            session=session,
+        )
+        if has_semantic_filters
+        else []
     )
     semantic_candidates = [
         PlaylistCandidate(song_id=song["id"], source="semantic", similarity_score=1.0, confidence=1.0)
         for song in semantic_songs
     ]
 
-    return _dedupe_candidates([*seed_candidates, *semantic_candidates])
+    candidates = _dedupe_candidates([*seed_candidates, *semantic_candidates])
+    logger.info(
+        "[PLAYLIST DEBUG] seed_song_ids=%s semantic_filters=%s initial_candidate_ids=%s",
+        seed_song_ids,
+        has_semantic_filters,
+        [candidate.song_id for candidate in candidates[:10]],
+    )
+    return candidates
 
 
 def _retrieve_fallback_seeds(filters: dict, session: Session) -> list[PlaylistCandidate]:

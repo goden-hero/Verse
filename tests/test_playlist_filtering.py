@@ -87,7 +87,8 @@ def test_stable_seed_song_ids_bypass_title_lookup(db_session: Session) -> None:
     """Current-player and queue seeds must use exact library IDs, not title text."""
     song_a = Song(path="/path/a.mp3", hash="id-seed-a", title="No Number Here", artist="Artist A", duration=180.0)
     song_b = Song(path="/path/b.mp3", hash="id-seed-b", title="Also No Number", artist="Artist B", duration=180.0)
-    db_session.add_all([song_a, song_b])
+    unrelated_song = Song(path="/path/c.mp3", hash="not-a-seed", title="Unrelated", artist="Artist C", duration=180.0)
+    db_session.add_all([song_a, song_b, unrelated_song])
     db_session.commit()
 
     candidates = _retrieve_initial_candidates(
@@ -404,4 +405,3 @@ def test_post_construction_playlist_naming_fallback_on_error(db_session: Session
     # Falls back gracefully to original name
     assert playlist_data["name"] == "Default Rain Mix"
     assert playlist_data["description"] is None
-

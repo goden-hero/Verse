@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -21,6 +23,7 @@ from app.services.playback_session import PlaybackSessionService
 from app.services.playlist_artwork import PlaylistArtworkService
 
 router = APIRouter(tags=["Playlists"])
+logger = logging.getLogger("music_rec.api.playlists")
 
 @router.post("/playlists/generate", response_model=List[SongResponse])
 def generate_playlist_preview(
@@ -144,6 +147,15 @@ def generate_playlist_preview(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported seed type: {payload.seed_type}."
         )
+
+    logger.info(
+        "[PLAYLIST DEBUG] request seed_type=%r seed_value=%r seed_song_ids=%s strategy=%r filters=%s",
+        payload.seed_type,
+        payload.seed_value,
+        payload.seed_song_ids,
+        backend_strategy,
+        filters,
+    )
 
     try:
         results = PlaylistService.generate_playlist_preview(
