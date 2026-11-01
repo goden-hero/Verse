@@ -66,6 +66,18 @@ def insert_default_user(target, connection, **kw):
 
 
 
+class AuthSession(Base):
+    """Persistent browser login. Only a digest of the cookie token is stored."""
+
+    __tablename__ = "auth_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+
 class Song(Base):
     """Represents a song in the library."""
 

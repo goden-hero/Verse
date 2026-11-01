@@ -145,6 +145,11 @@ OLLAMA_READ_TIMEOUT=120.0
 
 # Supported formats (comma separated)
 SUPPORTED_FORMATS=.mp3,.flac,.wav,.m4a,.ogg
+
+# Browser login sessions (30 days, in seconds)
+SESSION_MAX_AGE=2592000
+# Set true when HTTPS is terminated at a reverse proxy
+SESSION_COOKIE_SECURE=false
 ```
 
 ### 4. Database Initialization
@@ -152,6 +157,10 @@ Verify database tables are initialized and up-to-date by running Alembic migrati
 ```bash
 alembic upgrade head
 ```
+
+Web logins persist across page refreshes and server restarts using an HttpOnly
+cookie backed by the `auth_sessions` table. Log out to revoke the current browser's
+session. Run the migration above when upgrading an existing installation.
 
 ---
 

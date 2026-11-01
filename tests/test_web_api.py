@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.api.server import app
 from app.api.dependencies import get_db
 from app.database.models import Song
+from app.services.playlist import PlaylistService
 from app.main import main
 
 from sqlalchemy import create_engine, event

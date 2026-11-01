@@ -143,9 +143,11 @@ def test_fastapi_dependency_and_middleware() -> None:
     response = client.get("/api/v1/songs")
     assert response.status_code == 200
 
-    # Test dev header override X-User-ID
+    # A client-supplied user ID must not establish an authenticated session.
     response = client.get("/api/v1/songs", headers={"X-User-ID": "99"})
     assert response.status_code == 200
+    response = client.get("/api/v1/auth/me", headers={"X-User-ID": "99"})
+    assert response.status_code == 401
 
 
 def test_safe_logging(caplog: pytest.LogCaptureFixture) -> None:

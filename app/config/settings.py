@@ -29,6 +29,14 @@ class Settings:
         )
     )
 
+    # Persistent web login sessions
+    session_max_age: int = field(
+        default_factory=lambda: int(os.getenv("SESSION_MAX_AGE", str(30 * 24 * 60 * 60)))
+    )
+    session_cookie_secure: bool = field(
+        default_factory=lambda: os.getenv("SESSION_COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
+    )
+
     # Log Level
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper()

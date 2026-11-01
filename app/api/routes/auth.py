@@ -1,6 +1,6 @@
 """FastAPI REST API endpoints for Verse Authentication delegating strictly to AuthService."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentUser, get_current_user, get_db
@@ -20,6 +20,8 @@ from app.auth import (
     UsernameAlreadyExists,
     WeakPassword,
 )
+from app.auth.sessions import SESSION_COOKIE, SessionService
+from app.config.settings import settings
 
 router = APIRouter(tags=["Authentication"])
 
@@ -55,8 +57,8 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-def login_user(payload: LoginRequest, db: Session = Depends(get_db)):
-    """Authenticates credentials and populates active user context."""
+def login_user(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Authenticates credentials and issues a persistent browser session."""
     try:
         user = AuthService.authenticate(
             username=payload.username,
@@ -64,6 +66,16 @@ def login_user(payload: LoginRequest, db: Session = Depends(get_db)):
             session=db,
         )
         AuthService.login(user=user, session=db)
+        token = SessionService.create(user, db, request.cookies.get(SESSION_COOKIE))
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            max_age=settings.session_max_age,
+            httponly=True,
+            secure=settings.session_cookie_secure or request.url.scheme == "https",
+            samesite="lax",
+            path="/",
+        )
         return LoginResponse(
             user=UserResponse.model_validate(user),
             message="Login successful",
@@ -76,8 +88,17 @@ def login_user(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/logout", response_model=SuccessResponse)
-def logout_user():
-    """Clears the active authenticated user context."""
+def logout_user(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Revoke this browser's session and clear its cookie."""
+    SessionService.revoke(request.cookies.get(SESSION_COOKIE), db)
+    db.commit()
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure or request.url.scheme == "https",
+        samesite="lax",
+    )
     AuthService.logout()
     return SuccessResponse(message="Logout successful", success=True)
 

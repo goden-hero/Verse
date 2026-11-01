@@ -32,21 +32,6 @@ Object.defineProperty(currentState, 'isLooping', {
 });
 
 const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
-  const url = typeof input === 'string' ? input : input?.url || '';
-  const shouldAttachUser =
-    currentState.auth.authenticated &&
-    currentState.auth.currentUser?.id &&
-    url.startsWith('/api/v1/');
-
-  if (!shouldAttachUser) {
-    return nativeFetch(input, init);
-  }
-
-  const headers = new Headers(init.headers || {});
-  headers.set('X-User-ID', String(currentState.auth.currentUser.id));
-  return nativeFetch(input, { ...init, headers });
-};
 
 // SVG Icon Helpers to keep HTML clean
 const SVG_ICONS = {
@@ -225,8 +210,24 @@ async function bootstrapAuthentication() {
   if (authElements.loginForm) authElements.loginForm.style.display = 'none';
   if (authElements.registerForm) authElements.registerForm.style.display = 'none';
   if (authElements.app) authElements.app.style.display = 'none';
+  currentState.auth.currentUser = null;
+  currentState.auth.authenticated = false;
 
   try {
+    const meResponse = await nativeFetch('/api/v1/auth/me', {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    if (meResponse.ok) {
+      currentState.auth.currentUser = await meResponse.json();
+      currentState.auth.authenticated = true;
+      currentState.auth.loading = false;
+      showAuthenticatedApp();
+      return;
+    }
+    if (meResponse.status !== 401 && meResponse.status !== 404) {
+      throw new Error('session check failed');
+    }
     const response = await nativeFetch('/api/v1/auth/first-run');
     if (!response.ok) throw new Error('first-run check failed');
     const data = await response.json();
@@ -244,6 +245,7 @@ async function bootstrapAuthentication() {
 async function authenticateUser(username, password) {
   const loginResponse = await nativeFetch('/api/v1/auth/login', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
   });
@@ -334,9 +336,12 @@ async function handleRegisterSubmit(e) {
 
 async function handleLogout() {
   try {
-    await fetch('/api/v1/auth/logout', { method: 'POST' });
+    const response = await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    if (!response.ok) throw new Error('Unable to sign out. Please try again.');
   } catch (err) {
     console.error('Logout request failed:', err);
+    alert('Unable to sign out. Please try again.');
+    return;
   }
 
   if (elements.audio) {

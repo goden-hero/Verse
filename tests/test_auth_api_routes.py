@@ -1,7 +1,7 @@
 """API route tests for Authentication REST endpoints (/api/v1/auth)."""
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -93,6 +93,8 @@ def test_login_endpoint_flow(db_session: Session) -> None:
 
     response = login_user(
         payload=LoginRequest(username="jane_doe", password="JanePassword123!"),
+        request=Request({"type": "http", "scheme": "http", "path": "/", "headers": []}),
+        response=Response(),
         db=db_session,
     )
     assert response.message == "Login successful"
@@ -103,6 +105,8 @@ def test_login_endpoint_flow(db_session: Session) -> None:
     with pytest.raises(HTTPException) as wrong_password:
         login_user(
             payload=LoginRequest(username="jane_doe", password="WrongPassword"),
+            request=Request({"type": "http", "scheme": "http", "path": "/", "headers": []}),
+            response=Response(),
             db=db_session,
         )
     assert wrong_password.value.status_code == 401
@@ -111,15 +115,21 @@ def test_login_endpoint_flow(db_session: Session) -> None:
     with pytest.raises(HTTPException) as unknown_user:
         login_user(
             payload=LoginRequest(username="nobody", password="JanePassword123!"),
+            request=Request({"type": "http", "scheme": "http", "path": "/", "headers": []}),
+            response=Response(),
             db=db_session,
         )
     assert unknown_user.value.status_code == 401
     assert "Invalid username or password" in unknown_user.value.detail
 
 
-def test_logout_endpoint() -> None:
+def test_logout_endpoint(db_session: Session) -> None:
     """Verifies logout returns a success response."""
-    response = logout_user()
+    response = logout_user(
+        request=Request({"type": "http", "scheme": "http", "path": "/", "headers": []}),
+        response=Response(),
+        db=db_session,
+    )
 
     assert response.success is True
     assert response.message == "Logout successful"
