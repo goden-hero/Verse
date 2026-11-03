@@ -30,9 +30,20 @@ checks = r'''(async()=>{
  const check=(v,m)=>{if(!v)throw Error(m);};
  try {
   await wait(()=>currentState.auth.authenticated && discoveryState.jobs.get(expected.id)?.state===expected.state);
-  showSearchOverlay();document.getElementById('song-requests-panel').open=true;
-  const row=document.querySelector(`[data-request-id="${expected.id}"]`);
-  check(row?.textContent.includes(expected.title),'Selected recording absent');
+  const calls=[],originalFetch=window.fetch;
+  window.fetch=(url,...args)=>{calls.push(new URL(url,location.href).pathname);return originalFetch(url,...args);};
+  showSearchOverlay(expected.track.artist);
+  await wait(()=>document.getElementById('catalogue-search-results').getAttribute('aria-busy')==='false');
+  check(catalogueState.results.length>0,'Live MusicBrainz catalogue returned no results');
+  check(!calls.some(path=>path.endsWith('/search')||path.includes('/catalogue/recordings/')),'Typing queried local search/availability');
+  const list=document.getElementById('catalogue-search-results'),query=document.getElementById('catalogue-search-input').value;
+  check(!list.querySelector('button, input'),'Song actions present before selection');
+  list.scrollTop=80;const scroll=list.scrollTop;
+  const listed=list.querySelector(`[data-recording-id="${expected.track.recording_id}"]`);
+  if(listed)listed.click();else openSelectedSong(expected.track);
+  await wait(()=>selectedSongState.data&&!selectedSongState.loading);
+  const row=document.getElementById('song-action-panel');
+  check(selectedSongState.track.recording_id===expected.track.recording_id,'Selected recording mismatch');
   if(expected.state==='ready') {
    check(row.querySelector('[data-discovery-action="play"]'),'Ready Play action absent');
    row.querySelector('[data-discovery-action="add"]').click();
@@ -42,14 +53,17 @@ checks = r'''(async()=>{
    check(rect.left>=0 && rect.right<=innerWidth && rect.top>=0 && rect.bottom<=innerHeight,'Picker outside viewport');
    closeManualPlaylistDialog();
   } else if(expected.state==='failed') {
-   check(row.querySelector('.request-state').textContent.includes('Failed'),'Terminal failure not shown');
+   check(row.textContent.includes('Failed'),'Terminal failure not shown');
    check(!row.textContent.includes('Resolving recording'),'Failed recording still shown as resolving');
    check(row.querySelector('.external-result-error').textContent,'Failure detail absent');
    check(row.querySelector('[data-discovery-action="retry"]'),'Retry action absent');
   } else {
    check(row.querySelectorAll('[data-discovery-action="choose-version"]').length===expected.options,'Version choices absent');
   }
+  closeSelectedSongPanel();
+  check(list.scrollTop===scroll&&document.getElementById('catalogue-search-input').value===query,'Return lost query/scroll');
   window.liveProbe={passed:true,width:innerWidth,state:expected.state,song:expected.song,
+   catalogue_results:catalogueState.results.length,selected_recording_in_results:Boolean(listed),typing_local_queries:0,
    playlist_choices:EXPECTED_PLAYLISTS,mutations:false,playback_started:false};
  } catch(error) {window.liveProbe={passed:false,error:error.message,
    authenticated:currentState.auth.authenticated,jobs:[...discoveryState.jobs.values()].map(j=>({id:j.id,state:j.state})),
@@ -70,7 +84,7 @@ results = []
 with api_session() as client:
     job = call(client, 'GET', '/song-requests/' + args.job)
     assert job['state'] in ('ready', 'failed', 'awaiting_choice'), 'Wait for resolution first.'
-    expected = dict(id=job['id'], state=job['state'], title=job['track']['title'],
+    expected = dict(id=job['id'], state=job['state'], title=job['track']['title'],track=job['track'],
                     song=job['song']['id'] if job['song'] else None, options=len(job.get('candidates', [])))
     visible_playlists = call(client, 'GET', '/playlists?limit=100')
     live_checks = checks.replace('__EXPECTED__', json.dumps(expected)).replace('EXPECTED_PLAYLISTS', str(len(visible_playlists)))

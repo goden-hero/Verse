@@ -491,6 +491,7 @@ class PlaylistService:
         playlist_id: int,
         song_ids: list[int],
         session: Session,
+        commit: bool = True,
     ) -> dict:
         """Atomically append unique valid IDs, retaining every existing position.
 
@@ -527,7 +528,10 @@ class PlaylistService:
             ])
             if additions:
                 session.execute(update(Playlist).where(Playlist.id == playlist_id).values(updated_at=datetime.utcnow()))
-            session.commit()
+            if commit:
+                session.commit()
+            else:
+                session.flush()
         except Exception:
             session.rollback()
             raise

@@ -55,7 +55,7 @@ function isPlaylistList(data) {
   return Array.isArray(data) && data.every(p => p && Number.isInteger(p.id) &&
     typeof p.name === 'string' && Number.isInteger(p.songs_count));
 }
-async function requestJSON(key, url, validate, { force = false } = {}) {
+async function requestJSON(key, url, validate, { force = false, timeout = 15000 } = {}) {
   const owner = currentState.auth.currentUser?.id;
   if (owner !== requestOwner) { resetRequests(); requestOwner = owner; }
   const old = resources.get(key);
@@ -68,7 +68,7 @@ async function requestJSON(key, url, validate, { force = false } = {}) {
   const current = () => resources.get(key) === entry && requestEpoch === epoch;
   entry.promise = (async () => {
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; entry.controller.abort(); }, 15000);
+    const timer = setTimeout(() => { timedOut = true; entry.controller.abort(); }, timeout);
     try {
       const response = await fetch(url, {signal: entry.controller.signal});
       if (!response.ok) {
@@ -489,6 +489,7 @@ async function handleLogout() {
   searchState.selectedSongs.clear();
   updateSearchSelection();
   hideSearchOverlay();
+  hideLibrarySelection();
   closeManualPlaylistDialog(true);
   resetSongRequests();
   currentState.queue = [];
@@ -758,7 +759,7 @@ let searchState = {
 
 let searchTimeout = null;
 
-function showSearchOverlay(initialChar = '', destinationId = null) {
+function showLibrarySelection(initialChar = '', destinationId = null) {
   if (searchState.isOpen) return;
   searchState.isOpen = true;
   searchState.destinationId = destinationId;
@@ -770,15 +771,14 @@ function showSearchOverlay(initialChar = '', destinationId = null) {
   searchState.selectedIndex = -1;
   updateSearchSelection();
   triggerSearch(initialChar);
-  refreshSongRequests();
 }
 
-function hideSearchOverlay() {
+function hideLibrarySelection() {
+  if (!searchState.isOpen) return;
   searchState.isOpen = false;
   searchState.generation++;
   clearTimeout(searchTimeout);
   cancelResource('search');
-  invalidateExternalSearch();
   if (elements.searchOverlay) {
     elements.searchOverlay.classList.remove('active');
     elements.searchOverlay.inert = true;
@@ -791,7 +791,6 @@ function hideSearchOverlay() {
 }
 
 async function triggerSearch(query) {
-  scheduleExternalSearch(query);
   const generation = ++searchState.generation;
   const trimmed = query.trim();
   searchState.query = trimmed;
@@ -904,7 +903,7 @@ function handleSearchKeyboard(e) {
   const previous = searchState.selectedIndex;
   
   if (e.key === 'Escape') {
-    hideSearchOverlay();
+    hideLibrarySelection();
     e.preventDefault();
   } else if (e.key === 'ArrowDown') {
     if (searchState.results.length > 0) {
@@ -949,13 +948,15 @@ function initSearchEvents() {
       if (song) playSong(song);
     } else selectSearchResult(index);
   });
-  document.getElementById('btn-close-search')?.addEventListener('click', hideSearchOverlay);
+  document.getElementById('btn-close-search')?.addEventListener('click', hideLibrarySelection);
+  document.getElementById('btn-select-library-songs')?.addEventListener('click', () => showLibrarySelection());
   document.getElementById('btn-clear-song-selection')?.addEventListener('click', clearSongSelection);
   document.getElementById('btn-add-selection')?.addEventListener('click', () => openPlaylistPicker());
   document.getElementById('btn-retry-song-search')?.addEventListener('click', () => triggerSearch(searchState.query));
   // Global keydown handler for shortcuts (Space toggle, instant search)
   window.addEventListener('keydown', (e) => {
     if (manualPlaylistState.open) return;
+    if (typeof handleCatalogueKeyboard === 'function' && handleCatalogueKeyboard(e)) return;
     // 1. If search overlay is open, delegate arrow/enter/escape keys to handleSearchKeyboard
     if (searchState.isOpen) {
       handleSearchKeyboard(e);
@@ -992,7 +993,6 @@ function initSearchEvents() {
     if (searchTimeout) clearTimeout(searchTimeout);
     searchState.generation++;
     cancelResource('search');
-    invalidateExternalSearch();
     const retry = document.getElementById('btn-retry-song-search');
     if (retry) retry.hidden = true;
     const query = e.target.value;
@@ -1006,7 +1006,7 @@ function initSearchEvents() {
     // An action may replace its button before bubbling reaches this listener.
     // A detached target is not a backdrop click and must not close search.
     if (e.target === elements.searchOverlay) {
-      hideSearchOverlay();
+      hideLibrarySelection();
     }
   });
 
@@ -1023,7 +1023,7 @@ function initSearchEvents() {
 // ==========================================
 // 5. PLAYLIST GENERATION AND MANAGEMENT LOGIC
 // ==========================================
-const discoveryState = {generation: 0, query: '', timer: null, results: [], nodes: new Map(), requestNodes: new Map(),
+const discoveryState = {requestNodes: new Map(),
   jobs: new Map(), pending: new Set(), errors: new Map(), pollTimer: null, polling: false, epoch: 0, canRequest: false};
 const activeRequestStates = new Set(['queued', 'resolving', 'downloading', 'indexing']);
 const requestStates = new Set([...activeRequestStates, 'awaiting_choice', 'ready', 'failed']);
@@ -1031,6 +1031,9 @@ function isRequestJob(job) {
   return job && typeof job.id === 'string' && typeof job.key === 'string' && requestStates.has(job.state) &&
     job.track && typeof job.track.title === 'string' && typeof job.track.artist === 'string' &&
     (job.state !== 'ready' || (job.song && isSongList([job.song]))) &&
+    (job.playlist_intents == null || (Array.isArray(job.playlist_intents) && job.playlist_intents.every(intent =>
+      intent && Number.isInteger(intent.id) && Number.isInteger(intent.playlist_id) &&
+      typeof intent.playlist_name === 'string' && ['pending','added','failed'].includes(intent.state)))) &&
     (job.state !== 'awaiting_choice' || (Array.isArray(job.candidates) && job.candidates.length > 0 &&
       job.candidates.length <= 5 && job.candidates.every(isExternalTrack)));
 }
@@ -1051,62 +1054,31 @@ function isExternalTrack(track) {
     typeof track.album === 'string' && Number.isFinite(track.duration) && track.duration >= 0;
 }
 function invalidateExternalSearch() {
-  discoveryState.generation++;
-  clearTimeout(discoveryState.timer);
-  cancelResource('external-search');
+  if (typeof resetCatalogueUI === 'function') resetCatalogueUI();
 }
-function scheduleExternalSearch(query) {
-  if (!document.getElementById('external-search-results')) return;
-  invalidateExternalSearch();
-  discoveryState.query = query.trim();
-  if (discoveryState.query.length < 2) {
-    discoveryState.results = []; discoveryState.nodes.clear();
-    document.getElementById('external-search-results').replaceChildren();
-    setText(document.getElementById('external-search-status'), 'Enter at least two characters to discover songs.');
-    document.getElementById('btn-retry-external-search').hidden = true;
-    return;
-  }
-  setText(document.getElementById('external-search-status'), 'Searching external catalogue…');
-  discoveryState.timer = setTimeout(() => searchExternalSongs(discoveryState.query), 400);
+function externalJob(track) {
+  if (track.job) return discoveryState.jobs.get(track.job.id) || track.job;
+  return [...discoveryState.jobs.values()].filter(job => job.key === track.key ||
+    (track.provider === 'musicbrainz' && job.track.provider === 'musicbrainz' && job.track.recording_id === track.recording_id))
+    .sort((a,b) => Number(b.state === 'ready') - Number(a.state === 'ready') || String(b.updated_at).localeCompare(String(a.updated_at)))[0];
 }
-async function searchExternalSongs(query) {
-  const generation = discoveryState.generation;
-  const retry = document.getElementById('btn-retry-external-search');
-  if (retry) retry.hidden = true;
-  try {
-    const data = await requestJSON('external-search', `/api/v1/search/external?q=${encodeURIComponent(query)}`,
-      d => d && Array.isArray(d.results) && d.results.every(isExternalTrack) && typeof d.can_request === 'boolean');
-    if (!data || generation !== discoveryState.generation || !searchState.isOpen) return;
-    discoveryState.results = data.results; discoveryState.canRequest = data.can_request;
-    data.results.forEach(track => acceptRequestJob(track.job));
-    renderExternalSongs(); renderSongRequests();
-    setText(document.getElementById('external-search-status'), !data.can_request
-      ? `${data.provider}: downloads need VERSE_MUSIC_DIR and the request worker configured.`
-      : data.results.length ? `${data.provider} catalogue · ${data.results.length} results` : 'No external recordings found. Local results are unchanged.');
-  } catch (error) {
-    if (generation !== discoveryState.generation || !searchState.isOpen) return;
-    setText(document.getElementById('external-search-status'), error.message + ' Local search is still available.');
-    if (retry) retry.hidden = false;
-  }
-}
-function externalJob(track) { return [...discoveryState.jobs.values()].find(job => job.key === track.key) || track.job; }
 function requestLabel(job) {
   if (job.state === 'queued' && job.attempts === 0) return 'Queued — waiting for worker';
   if (job.state === 'queued' && job.error) return 'Queued for retry';
   return {queued:'Queued',resolving:'Resolving recording',downloading:'Downloading',indexing:'Indexing',awaiting_choice:'Choose version',ready:'In your library',failed:'Failed — not processing'}[job.state];
 }
 function updateExternalSong(row, track) {
-  const job = externalJob(track), song = job?.song || track.song;
+  const job = externalJob(track), song = job ? job.song : track.song;
   const busy = discoveryState.pending.has(track.key);
   const signature = JSON.stringify([song?.id, job?.state, job?.error, job?.candidates, busy, discoveryState.canRequest, discoveryState.errors.get(track.key)]);
   if (row._verseRequestSignature === signature) return;
   row._verseRequestSignature = signature;
   const actions = row.querySelector('.external-result-actions');
   if (song) actions.innerHTML = '<span class="manual-playlist-status">In your library</span><button type="button" class="manual-playlist-button" data-discovery-action="play">Play</button><button type="button" class="manual-playlist-button" data-discovery-action="add">Add to playlist</button>';
-  else if (job) actions.innerHTML = `<span>${escapeHtml(requestLabel(job))}</span>${['failed','awaiting_choice'].includes(job.state) ? '<button type="button" class="manual-playlist-button" data-discovery-action="retry">Retry discovery</button><button type="button" class="manual-playlist-button" data-discovery-action="reselect">Search again</button>' : ''}`;
-  else actions.innerHTML = `<button type="button" class="manual-playlist-button" data-discovery-action="request" ${busy || !discoveryState.canRequest ? 'disabled' : ''}>${busy ? 'Requesting…' : 'Request song'}</button>`;
+  else if (job) actions.innerHTML = `<span>${escapeHtml(busy ? 'Saving request…' : requestLabel(job))}</span>${['failed','awaiting_choice'].includes(job.state) ? '<button type="button" class="manual-playlist-button" data-discovery-action="retry">Retry</button><button type="button" class="manual-playlist-button" data-discovery-action="reselect">Search again</button>' : ''}<button type="button" class="manual-playlist-button" data-discovery-action="add">Add to playlist</button>`;
+  else actions.innerHTML = `<button type="button" class="manual-playlist-button" data-discovery-action="request" ${busy || !discoveryState.canRequest ? 'disabled' : ''}>${busy ? 'Queuing…' : 'Download'}</button><button type="button" class="manual-playlist-button" data-discovery-action="add" ${!discoveryState.canRequest ? 'disabled' : ''}>Add to playlist</button>`;
   if (busy) actions.querySelectorAll('button').forEach(button => { button.disabled = true; });
-  setText(row.querySelector('.external-result-error'), discoveryState.errors.get(track.key) || job?.error || '');
+  setText(row.querySelector('.external-result-error'), busy ? '' : discoveryState.errors.get(track.key) || job?.error || '');
   const previousPicker = row.querySelector('.request-version-picker');
   const wasOpen = previousPicker?.open;
   previousPicker?.remove();
@@ -1120,22 +1092,7 @@ function updateExternalSong(row, track) {
   }
 }
 function renderExternalSongs() {
-  const container = document.getElementById('external-search-results');
-  if (!container) return;
-  const keys = new Set(discoveryState.results.map(track => track.key));
-  discoveryState.nodes.forEach((node, key) => { if (!keys.has(key)) { node.remove(); discoveryState.nodes.delete(key); } });
-  discoveryState.results.forEach((track, index) => {
-    let row = discoveryState.nodes.get(track.key);
-    if (!row) {
-      row = document.createElement('div'); row.className = 'external-result'; row.dataset.discoveryKey = track.key;
-      const art = typeof track.artwork_url === 'string' && track.artwork_url.startsWith('https://')
-        ? `<img src="${escapeHtml(track.artwork_url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : '';
-      row.innerHTML = `${art}<div class="external-result-meta"><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small><small>${escapeHtml([track.album,track.version].filter(Boolean).join(' · '))} · ${track.duration > 0 ? formatDuration(track.duration) : 'Duration unavailable'}</small><div class="external-result-error" role="status"></div></div><div class="external-result-actions"></div>`;
-      discoveryState.nodes.set(track.key, row);
-    }
-    updateExternalSong(row, track);
-    if (container.children[index] !== row) container.insertBefore(row, container.children[index] || null);
-  });
+  if (typeof renderSelectedSongPanel === 'function') renderSelectedSongPanel();
 }
 function renderSongRequests() {
   const list = document.getElementById('song-requests-list');
@@ -1224,8 +1181,7 @@ async function refreshSongRequests() {
     if (epoch !== discoveryState.epoch) return;
     [...jobs, ...extra.filter(Boolean)].forEach(job => {
       const previous = discoveryState.jobs.get(job.id);
-      if (acceptRequestJob(job) && previous && previous.state !== 'ready' && job.state === 'ready')
-        showPlaylistNotice(`${job.track.title} is ready to play.`);
+      if (acceptRequestJob(job) && typeof notifySongRequestChange === 'function') notifySongRequestChange(previous, job);
     });
     while (discoveryState.jobs.size > 150) {
       const removable = [...discoveryState.jobs.values()].find(job => ['ready','failed'].includes(job.state));
@@ -1238,7 +1194,8 @@ async function refreshSongRequests() {
   } finally {
     if (epoch === discoveryState.epoch) {
       discoveryState.polling = false;
-      const active = [...discoveryState.jobs.values()].some(job => activeRequestStates.has(job.state));
+      const active = [...discoveryState.jobs.values()].some(job => activeRequestStates.has(job.state) ||
+        (job.state === 'ready' && job.playlist_intents?.some(intent => intent.state === 'pending')));
       // Terminal/awaiting-choice jobs are not ongoing work. Refresh on opening
       // search, returning to the page, or explicit Refresh instead of polling.
       if (active) discoveryState.pollTimer = setTimeout(refreshSongRequests, 3000);
@@ -1251,37 +1208,11 @@ function resetSongRequests() {
   cancelResource('song-requests');
   discoveryState.jobs.clear(); discoveryState.pending.clear(); discoveryState.errors.clear();
   discoveryState.requestNodes.forEach(node => node.remove()); discoveryState.requestNodes.clear();
-  discoveryState.results = []; discoveryState.nodes.clear();
-  document.getElementById('external-search-results')?.replaceChildren();
   renderSongRequests();
 }
-function initDiscoveryEvents() {
-  const external = document.getElementById('external-search-results'), list = document.getElementById('song-requests-list');
-  if (!external || !list || external._verseDiscoveryBound) return;
-  external._verseDiscoveryBound = true;
-  document.getElementById('btn-retry-external-search')?.addEventListener('click', () => searchExternalSongs(discoveryState.query));
-  document.getElementById('btn-refresh-song-requests')?.addEventListener('click', refreshSongRequests);
-  const act = event => {
-    const button = event.target.closest('[data-discovery-action]'); if (!button) return;
-    const row = button.closest('[data-discovery-key], [data-request-id]');
-    const job = row?.dataset.requestId ? discoveryState.jobs.get(row.dataset.requestId) : null;
-    const track = job?.track || discoveryState.results.find(item => item.key === row?.dataset.discoveryKey);
-    if (!track) return;
-    const song = job?.song || externalJob(track)?.song || track.song;
-    if (button.dataset.discoveryAction === 'play' && song) playSong(song);
-    else if (button.dataset.discoveryAction === 'add' && song) openPlaylistPicker([song.id]);
-    else if (button.dataset.discoveryAction === 'choose-version') chooseSongRequestVersion(track, button.dataset.candidateKey);
-    else if (button.dataset.discoveryAction === 'reselect') {
-      showSearchOverlay(); elements.searchOverlayInput.value = track.title; elements.searchOverlayInput.focus(); triggerSearch(track.title);
-    } else submitSongRequest(track, button.dataset.discoveryAction === 'retry');
-  };
-  external.addEventListener('click', act); list.addEventListener('click', act);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSongRequests(); });
-}
-
 const manualPlaylistState = {
   open: false, pending: false, mode: 'create', origin: 'create', generation: 0,
-  playlists: [], destinationId: null, songIds: [], returnFocus: null
+  playlists: [], destinationId: null, songIds: [], returnFocus: null, requestTrack: null, createdDestination: null
 };
 let playlistNoticeTimer = null;
 
@@ -1312,7 +1243,7 @@ function updateManualPlaylistControls() {
   const add = document.getElementById('btn-confirm-playlist-add');
   if (add) {
     add.disabled = state.pending || !state.playlists.some(p => p.id === state.destinationId);
-    add.textContent = state.pending ? 'Adding…' : `Add ${state.songIds.length} song${state.songIds.length === 1 ? '' : 's'}`;
+    add.textContent = state.pending ? 'Saving…' : state.requestTrack ? 'Download and add when ready' : `Add ${state.songIds.length} song${state.songIds.length === 1 ? '' : 's'}`;
   }
   setText(document.getElementById('btn-submit-manual-playlist'), state.pending ? 'Creating…' : state.songIds.length ? 'Create and add songs' : 'Create playlist');
 }
@@ -1331,7 +1262,7 @@ function showPlaylistPickerPanel() {
   manualPlaylistState.mode = 'choose';
   document.getElementById('playlist-picker-panel').hidden = false;
   document.getElementById('manual-playlist-form').hidden = true;
-  setText(document.getElementById('manual-playlist-title'), `Add ${manualPlaylistState.songIds.length} selected song${manualPlaylistState.songIds.length === 1 ? '' : 's'} to playlist`);
+  setText(document.getElementById('manual-playlist-title'), manualPlaylistState.requestTrack ? 'Download and add to playlist' : `Add ${manualPlaylistState.songIds.length} selected song${manualPlaylistState.songIds.length === 1 ? '' : 's'} to playlist`);
   setManualPlaylistError(); renderPlaylistPicker();
   document.getElementById('playlist-picker-search').focus();
 }
@@ -1341,7 +1272,7 @@ function openManualPlaylistDialog(origin) {
   if (!dialog || manualPlaylistState.open) return false;
   Object.assign(manualPlaylistState, {open: true, pending: false, origin,
     songIds: origin === 'picker' ? [...searchState.selectedSongs.keys()] : [],
-    destinationId: searchState.destinationId, playlists: [], returnFocus: document.activeElement});
+    destinationId: searchState.destinationId, playlists: [], returnFocus: document.activeElement, requestTrack: null, createdDestination: null});
   manualPlaylistState.generation++;
   document.getElementById('manual-playlist-name').value = '';
   document.getElementById('manual-playlist-description').value = '';
@@ -1375,8 +1306,9 @@ function closeManualPlaylistDialog(force = false) {
   state.returnFocus?.focus();
 }
 
-async function openPlaylistPicker(songIds = null) {
-  if (!(songIds?.length || searchState.selectedSongs.size) || !openManualPlaylistDialog('picker')) return;
+async function openPlaylistPicker(songIds = null, requestTrack = null) {
+  if (!(requestTrack || songIds?.length || searchState.selectedSongs.size) || !openManualPlaylistDialog('picker')) return;
+  if (requestTrack) { manualPlaylistState.songIds = []; manualPlaylistState.requestTrack = requestTrack; showPlaylistPickerPanel(); }
   if (Array.isArray(songIds)) { manualPlaylistState.songIds = [...songIds]; showPlaylistPickerPanel(); }
   await loadPlaylistPicker();
 }
@@ -1473,6 +1405,25 @@ async function submitManualPlaylist(create = false) {
   const navigation = navigationGeneration, origin = state.origin;
   state.pending = true; setManualPlaylistError(); updateManualPlaylistControls();
   try {
+    if (state.requestTrack) {
+      let target = destination;
+      if (create) {
+        target = state.createdDestination;
+        if (!target) {
+          const created = await sendPlaylistMutation('/api/v1/playlists', {name, description:document.getElementById('manual-playlist-description').value.trim(),song_ids:[]});
+          if (!Number.isInteger(created?.id)) throw new Error('Invalid created playlist response.');
+          target = state.createdDestination = {id:created.id,name,songs_count:0};
+        }
+      }
+      const track = state.requestTrack;
+      const job = await sendPlaylistMutation('/api/v1/song-requests', {provider:track.provider,recording_id:track.recording_id,release_id:track.release_id||'',playlist_id:target.id});
+      if (!state.open || state.generation !== generation || epoch !== requestEpoch) return;
+      if (!isRequestJob(job) || !job.playlist_intents?.some(intent => intent.playlist_id === target.id)) throw new Error('Invalid download/playlist confirmation. Retry safely; the destination is retained.');
+      acceptRequestJob(job); closeManualPlaylistDialog(true);
+      showPlaylistNotice(job.state === 'ready' ? `${track.title} is available; playlist addition saved.` : `${track.title} will download and be added to ${target.name} when ready.`);
+      renderExternalSongs(); renderSongRequests(); refreshSongRequests(); refreshPlaylistData(target.id);
+      return;
+    }
     const data = await sendPlaylistMutation(create ? '/api/v1/playlists' : `/api/v1/playlists/${destination.id}/songs`,
       create ? {name, description: document.getElementById('manual-playlist-description').value.trim(), song_ids: songIds} : {song_ids: songIds});
     if (!state.open || state.generation !== generation || epoch !== requestEpoch) return;
@@ -1507,7 +1458,7 @@ function initManualPlaylistEvents() {
     });
   });
   document.getElementById('btn-playlist-add-songs')?.addEventListener('click', () => {
-    if (currentPlaylistData) showSearchOverlay('', currentPlaylistData.id);
+    if (currentPlaylistData) showLibrarySelection('', currentPlaylistData.id);
   });
   document.getElementById('btn-close-playlist-dialog').addEventListener('click', () => closeManualPlaylistDialog());
   dialog.addEventListener('cancel', event => { event.preventDefault(); closeManualPlaylistDialog(); });

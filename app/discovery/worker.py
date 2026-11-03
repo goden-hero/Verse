@@ -58,6 +58,8 @@ class RequestWorker:
         self.indexer = indexer
 
     def run_once(self):
+        from .playlist_intents import fulfill_ready_intents
+        if fulfill_ready_intents(): return True
         now = datetime.utcnow()
         with get_session() as db:
             oldest = select(SongRequest.id).where(SongRequest.state == "queued", SongRequest.next_attempt_at <= now).order_by(SongRequest.created_at, SongRequest.id).limit(1).scalar_subquery()
@@ -101,6 +103,7 @@ class RequestWorker:
                 song_id = self.indexer(path, resolved, keys, db)
                 db.execute(update(SongRequest).where(SongRequest.id == job_id).values(state="ready", song_id=song_id, error=None, updated_at=datetime.utcnow()))
             logger.info("Song request %s ready (song %s)", job_id, song_id)
+            fulfill_ready_intents(job_id)
         except ChooseRecording as choice:
             checkpoint(job_id, state='awaiting_choice', error=None, downloaded_path=None,
                 resolved_json=json.dumps(choice.options))

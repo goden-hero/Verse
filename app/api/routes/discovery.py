@@ -1,11 +1,12 @@
 import logging
+from dataclasses import replace
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 from app.api.dependencies import CurrentUser, get_current_user
 from app.database.connection import get_session
-from app.database.models import SongRequest, SongSource
+from app.database.models import SongRequest
 from app.services.library import LibraryService
 from app.discovery.catalogue import Catalogue, DiscoveryError, identity
 from app.discovery.config import DiscoveryConfig
@@ -26,17 +27,12 @@ def unavailable(error):
 
 @router.get("/search/external")
 def external_search(q: str = Query(default="", max_length=200)):
-    config = DiscoveryConfig.load()
+    # The public search catalogue is MusicBrainz regardless of acquisition's
+    # optional Spotify credentials. No songs/sources/jobs are queried here.
+    config = replace(DiscoveryConfig.load(), provider='musicbrainz')
     if len(q.strip()) < 2: return {"provider": config.catalogue, "results": [], "can_request": config.music_dir is not None}
     try:
         tracks = Catalogue(config).search(q.strip())
-        # Only exact provenance identities link to a local song; never title-only.
-        with get_session() as db:
-            for track in tracks:
-                song_id = source_song(db, track["key"])
-                track["song"] = LibraryService.get_song_by_id(song_id, db) if song_id else None
-                job = db.query(SongRequest).filter_by(identity_key=track["key"]).first()
-                track["job"] = job_dict(job, db) if job else None
         return {"provider": config.catalogue, "results": tracks, "can_request": config.music_dir is not None}
     except (DiscoveryError, OperationalError) as error:
         raise unavailable(error) from error
@@ -48,18 +44,31 @@ class RequestSelection(BaseModel):
     release_id: str = Field(default="", max_length=36)
 
 
+class RequestIntent(RequestSelection):
+    playlist_id: int | None = Field(default=None, gt=0)
+
+
 def require_signed_in(user):
     if not user.is_authenticated: raise HTTPException(401, "Sign in to request songs.")
 
 
 @router.post("/song-requests", status_code=202)
-def create_request(payload: RequestSelection, user: CurrentUser = Depends(get_current_user)):
+def create_request(payload: RequestIntent, user: CurrentUser = Depends(get_current_user)):
     require_signed_in(user)
     try:
         key = identity(payload.provider, payload.recording_id, payload.release_id)
-        return request_song(key)
+        return request_song(key, payload.playlist_id, user)
+    except LookupError as error: raise HTTPException(404, str(error)) from error
     except (DiscoveryError, OperationalError) as error:
         raise unavailable(error) from error
+
+
+@router.get('/catalogue/recordings/{recording_id}')
+def catalogue_selection(recording_id: str, release_id: str = '', user: CurrentUser = Depends(get_current_user)):
+    require_signed_in(user)
+    from app.discovery.selection import selected_recording
+    try: return selected_recording(identity('musicbrainz', recording_id, release_id))
+    except (DiscoveryError, OperationalError) as error: raise unavailable(error) from error
 
 
 @router.get("/song-requests")

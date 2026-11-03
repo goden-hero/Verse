@@ -1755,10 +1755,41 @@ button {
 .song-requests-panel summary { cursor: pointer; min-height: 30px; font-size: 13px; }
 #song-requests-list { max-height: 200px; overflow-y: auto; }
 .search-overlay-content { overflow-y: auto; overscroll-behavior: contain; }
+.catalogue-search-content { overflow: hidden; max-height: min(640px, 80dvh); }
+.catalogue-search-content .search-overlay-input-row { padding: 16px 20px; gap: 12px; }
+.catalogue-search-content .search-overlay-input { min-width: 0; font-size: 16px; }
+.catalogue-status-row { display: flex; align-items: center; gap: 12px; padding: 0 20px; min-height: 28px; color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
+.catalogue-status-row .loading { opacity: .65; }
+.catalogue-results { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 8px; flex: 1 1 auto; }
+.catalogue-result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 56px; box-sizing: border-box; border-radius: 10px; cursor: pointer; }
+.catalogue-result:hover, .catalogue-result.highlighted { background: rgba(124,58,237,.15); }
+.catalogue-art { position: relative; width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.04); color: var(--text-muted); }
+.catalogue-art svg { width: 24px; height: 24px; }
+.catalogue-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.catalogue-result-meta { min-width: 0; flex: 1; }
+.catalogue-title, .catalogue-artist { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catalogue-title { font-size: 14px; color: var(--text-main); }
+.catalogue-artist, .catalogue-duration { font-size: 12px; color: var(--text-muted); }
+.catalogue-duration { flex-shrink: 0; }
+.song-action-panel { width: min(480px, calc(100vw - 32px)); max-height: 80dvh; padding: 20px; box-sizing: border-box; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 18px; background: #161226; color: var(--text-main); margin: auto; }
+.song-action-panel::backdrop { background: rgba(8,6,16,.6); }
+.song-action-panel .section-header { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.song-action-panel .section-header > button { flex-shrink: 0; }
+.song-action-panel h2 { font-size: 20px; overflow-wrap: anywhere; margin: 0; }
+.song-action-details p, .song-action-intents { color: var(--text-muted); font-size: 13px; overflow-wrap: anywhere; }
+.song-action-panel .external-result { padding: 12px 0; display: block; }
+.song-action-panel .external-result-actions { max-width: none; }
+.song-action-panel [hidden], .catalogue-overlay [hidden] { display: none !important; }
+.song-action-panel.dialog-fallback { position: fixed; inset: 0; z-index: 1800; box-shadow: 0 0 0 100vmax rgba(8,6,16,.6); }
+.song-action-panel button, .catalogue-overlay button { min-height: 44px; }
 .search-overlay-results { overflow-y: auto; max-height: 30vh; flex-shrink: 0; }
 #external-search-results { max-height: 30vh; overflow-y: auto; }
 .search-overlay-input-row, .search-selection-toolbar { flex-shrink: 0; }
 @media (max-width: 767px) {
+  .catalogue-overlay { padding-top: max(12px, env(safe-area-inset-top)); box-sizing: border-box; }
+  .catalogue-overlay .catalogue-search-content { width: calc(100% - 24px); border-radius: 16px; max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .catalogue-overlay .search-overlay-input-row { padding: 12px; }
+  .song-action-panel, .song-action-panel.dialog-fallback { position: fixed; inset: auto 0 0; margin: 0 auto; width: 100%; max-height: 85dvh; border-radius: 20px 20px 0 0; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); }
   .search-overlay-content { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
   .search-overlay-input { min-width: 0; }
   .search-result-item { padding: 10px 8px; gap: 10px; }

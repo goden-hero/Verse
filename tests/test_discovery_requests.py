@@ -477,10 +477,10 @@ def test_spotify_client_credentials_search_uses_current_limit(environment, monke
         return response({'tracks':{'items':[{'id':SPOTIFY_ID,'name':'Song','duration_ms':1000,'artists':[{'name':'Artist'}],
             'album':{'id':'B'*22,'name':'Album','images':[]},'external_ids':{'isrc':'USABC2500001'}}]}})
     monkeypatch.setattr(catalogue.requests,'get',get)
-    result=environment.client.get('/api/v1/search/external?q=Spotify')
-    assert result.status_code==200 and result.json()['provider']=='spotify'
+    result=Catalogue().search('Spotify')  # Internal capability, not the public MusicBrainz-only search.
+    assert result[0]['provider']=='spotify'
     assert calls[0]['params']['limit']==10
-    assert 'test-secret' not in result.text and 'test-token' not in result.text
+    assert 'test-secret' not in json.dumps(result) and 'test-token' not in json.dumps(result)
 
 
 def test_distinct_versions_get_distinct_request_jobs(environment):

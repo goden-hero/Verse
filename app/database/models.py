@@ -147,6 +147,24 @@ class DiscoveryCache(Base):
     expires_at: Mapped[float] = mapped_column(Float, index=True)
 
 
+class SongRequestPlaylist(Base):
+    """Durable append intent; deliberately retains a deleted destination's ID/name."""
+    __tablename__ = 'song_request_playlists'
+    __table_args__ = (UniqueConstraint('request_id', 'playlist_id'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey('song_requests.id', ondelete='CASCADE'), index=True)
+    playlist_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    playlist_name: Mapped[str] = mapped_column(String, nullable=False)
+    playlist_created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), default='pending', index=True)
+    error: Mapped[str | None] = mapped_column(String)
+    added_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class CatalogueBudget(Base):
     __tablename__ = "catalogue_budgets"
     provider: Mapped[str] = mapped_column(String(30), primary_key=True)

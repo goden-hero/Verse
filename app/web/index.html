@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="index.css?v=20261103-request-resolution">
+  <link rel="stylesheet" href="index.css?v=20261103-catalogue-panel">
 </head>
 <body class="auth-locked">
   <!-- Authentication Shell -->
@@ -226,6 +226,13 @@
           </div>
         </section>
 
+        <details id="song-requests-panel" class="song-requests-panel">
+          <summary id="song-requests-summary">Song requests</summary>
+          <div id="song-requests-status" class="manual-playlist-status" role="status"></div>
+          <button type="button" class="manual-playlist-button" id="btn-refresh-song-requests">Refresh requests</button>
+          <div id="song-requests-list"></div>
+        </details>
+
         <!-- Library Filter & Search Row -->
         <div class="filter-row">
           <div class="search-box-wrapper">
@@ -237,6 +244,7 @@
           </div>
 
           <div class="dropdown-filters">
+            <button type="button" class="manual-playlist-button" id="btn-select-library-songs">Select library songs</button>
             <select class="filter-select" id="filter-genre">
               <option value="">All Genres</option>
             </select>
@@ -1005,7 +1013,27 @@
   <!-- HTML5 Audio Node (Hidden) -->
   <audio id="main-audio-element" style="display:none;"></audio>
 
-  <!-- Search Overlay -->
+  <!-- MusicBrainz catalogue: no local lookups or song actions while typing. -->
+  <div class="search-overlay catalogue-overlay" id="catalogue-search-overlay" inert>
+    <div class="search-overlay-content catalogue-search-content" role="dialog" aria-modal="true" aria-label="Search music">
+      <div class="search-overlay-input-row">
+        <input type="search" class="search-overlay-input" id="catalogue-search-input" aria-label="Search songs or artists" placeholder="Search songs or artists" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="catalogue-search-results" aria-expanded="true">
+        <button type="button" class="manual-playlist-button" id="btn-close-catalogue" aria-label="Close search">Close</button>
+      </div>
+      <div class="catalogue-status-row"><span id="catalogue-search-status" role="status" aria-live="polite">Search for a song or artist.</span><button type="button" class="manual-playlist-button" id="btn-retry-catalogue" hidden>Retry</button></div>
+      <div class="catalogue-results" id="catalogue-search-results" role="listbox" aria-label="Recordings"></div>
+    </div>
+  </div>
+  <dialog id="song-action-panel" class="song-action-panel" aria-labelledby="song-action-title">
+    <div class="section-header"><h2 id="song-action-title">Song</h2><button type="button" class="manual-playlist-button" id="btn-close-song-action">Close</button></div>
+    <div id="song-action-details" class="song-action-details"></div>
+    <div id="song-action-status" role="status" aria-live="polite" class="manual-playlist-status"></div>
+    <button type="button" class="manual-playlist-button" id="btn-retry-availability" hidden>Retry checking library</button>
+    <div id="song-action-row" class="external-result"><div class="external-result-error" role="status"></div><div class="external-result-actions"></div></div>
+    <div id="song-action-intents" class="song-action-intents" role="status" aria-live="polite"></div>
+  </dialog>
+
+  <!-- Separate full-library bulk playlist tool. -->
   <div class="search-overlay" id="search-overlay" inert>
     <div class="search-overlay-content" role="dialog" aria-modal="true" aria-label="Search and select library songs">
       <div class="search-overlay-input-row">
@@ -1024,22 +1052,9 @@
       </div>
       <div id="search-load-status" class="manual-playlist-status" role="status" aria-live="polite"></div>
       <button type="button" class="manual-playlist-button" id="btn-retry-song-search" hidden>Retry search</button>
-      <h3 class="discovery-heading">In your library</h3>
       <div class="search-overlay-results" id="search-overlay-results">
         <!-- Search result entries will populate dynamically -->
       </div>
-      <section class="external-search-section" aria-label="External song discovery">
-        <h3 class="discovery-heading">Available to request</h3>
-        <div class="manual-playlist-status" id="external-search-status" role="status" aria-live="polite">Search to discover more songs.</div>
-        <button type="button" class="manual-playlist-button" id="btn-retry-external-search" hidden>Retry external search</button>
-        <div id="external-search-results"></div>
-      </section>
-      <details id="song-requests-panel" class="song-requests-panel">
-        <summary id="song-requests-summary">Song requests</summary>
-        <div id="song-requests-status" class="manual-playlist-status" role="status"></div>
-        <button type="button" class="manual-playlist-button" id="btn-refresh-song-requests">Refresh requests</button>
-        <div id="song-requests-list"></div>
-      </details>
     </div>
   </div>
 
@@ -1079,6 +1094,7 @@
   <div id="playlist-notice" class="playlist-notice" role="status" aria-live="polite" hidden></div>
 
   <!-- Application Logic -->
-  <script src="index.js?v=20261103-request-resolution"></script>
+  <script src="index.js?v=20261103-catalogue-panel"></script>
+  <script src="catalogue.js?v=20261103-catalogue-panel"></script>
 </body>
 </html>

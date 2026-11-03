@@ -74,6 +74,7 @@ window.fetch=async function(url,options={}) {
 if '--discovery' in sys.argv:
     shim += Path(__file__).with_name('browser_discovery_fixture.js').read_text()
 html = re.sub(r'<script src="index.js[^\"]*"></script>', lambda _: '<script>' + shim + '</script><script>' + root.joinpath('index.js').read_text() + '</script>', html)
+html = re.sub(r'<script src="catalogue.js[^\"]*"></script>', lambda _: '<script>' + root.joinpath('catalogue.js').read_text() + '</script>', html)
 
 checks = r'''
 (async()=>{
@@ -164,7 +165,7 @@ checks = r'''
  check(audio===originalAudio&&audio.getAttribute('src')===playingSrc&&manualApi.playCalls===1&&manualApi.pauseCalls===0,'search/add interrupted playback');
 
  // Refresh the currently open destination as well as the sidebar, without navigation.
- hideSearchOverlay();await openPlaylistDetail(11);
+ hideLibrarySelection();await openPlaylistDetail(11);
  el('btn-playlist-add-songs').click();await search('Album 400');select(400);
  await openPicker();check(manualPlaylistState.destinationId===11,'Add songs did not preselect its playlist');
  el('btn-confirm-playlist-add').click();await wait(()=>currentPlaylistData?.songs.length===6);
@@ -222,6 +223,15 @@ checks = r'''
 
 if '--discovery' in sys.argv:
     checks = Path(__file__).with_name('browser_discovery_checks.js').read_text()
+if '--preview-catalogue' in sys.argv:
+    checks = r'''(async()=>{
+      const wait=async fn=>{for(let i=0;i<500;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw Error('Preview timeout');};
+      await wait(()=>currentState.songs.length===100);showSearchOverlay('Catalogue');
+      await wait(()=>catalogueState.results.length===30);
+      if(PREVIEW_PANEL){document.querySelector('[data-recording-id="'+catalogueTrack(2).recording_id+'"]').click();await wait(()=>selectedSongState.data&&!selectedSongState.loading);}
+      await new Promise(resolve=>setTimeout(resolve,350));
+      window.manualPlaylistResult={passed:true,width:innerWidth,preview:true};
+    })().catch(error=>window.manualPlaylistResult={passed:false,error:String(error)});'''.replace('PREVIEW_PANEL', 'true' if '--preview-panel' in sys.argv else 'false')
 
 
 class BlockNetwork(QWebEngineUrlRequestInterceptor):
@@ -246,6 +256,9 @@ def poll_result(result):
         return
     parsed = json.loads(result)
     results.append(parsed)
+    if parsed.get('passed') and '--preview-catalogue' in sys.argv:
+        name = 'selected' if '--preview-panel' in sys.argv else 'catalogue'
+        view.grab().save(f'/tmp/verse-{name}-{view.width()}.png')
     print(json.dumps(parsed), flush=True)
     if parsed.get('passed') and not mobile_run:
         mobile_run = True

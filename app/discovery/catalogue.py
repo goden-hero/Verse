@@ -76,6 +76,8 @@ def check_response(response, provider):
         postpone(provider, delay)
         raise DiscoveryError(f"{provider.title()} is temporarily rate limited or unavailable.", delay)
     if response.status_code in (401, 403):
+        if provider == 'musicbrainz':
+            raise DiscoveryError('MusicBrainz denied the catalogue request. Check the server contact configuration and provider availability.')
         raise DiscoveryError("Catalogue access denied. Check Spotify credentials, app eligibility and permissions.")
     if not response.ok:
         raise DiscoveryError(f"Catalogue request failed (HTTP {response.status_code}).")
@@ -139,7 +141,7 @@ class Catalogue:
         try:
             return check_response(requests.get(base + path, params=params, headers=headers, timeout=(3, 8)), provider)
         except requests.RequestException as error:
-            raise DiscoveryError("External catalogue network request failed. Local search is still available.") from error
+            raise DiscoveryError("The catalogue network request failed. Try again shortly.") from error
 
     def _token(self):
         if not self.config.client_id or not self.config.client_secret:
@@ -161,7 +163,7 @@ class Catalogue:
         provider = self.config.catalogue
         if provider not in ("spotify", "musicbrainz"):
             raise DiscoveryError("VERSE_CATALOGUE must be auto, spotify, or musicbrainz.")
-        key = "query:" + provider + ":" + hashlib.sha256(query.strip().casefold().encode()).hexdigest()
+        key = "query:" + provider + ":v2:" + hashlib.sha256(query.strip().casefold().encode()).hexdigest()
         cached = cache_get(key)
         if cached is not None: return cached
         try:
@@ -170,8 +172,13 @@ class Catalogue:
                 tracks = [spotify_track(item) for item in data["tracks"]["items"]]
             else:
                 escaped = query.replace('\\', '\\\\').replace('"', '\\"')
-                data = self._get("recording/", {"query": f'recording:"{escaped}" OR artist:"{escaped}" OR release:"{escaped}"', "fmt": "json", "limit": 10})
-                tracks = [musicbrainz_track(item) for item in data["recordings"]]
+                data = self._get("recording/", {"query": f'recording:"{escaped}" OR artist:"{escaped}"', "fmt": "json", "limit": 25})
+                # A recording on several releases is still one recording. Never
+                # collapse distinct MBIDs merely because title/artist agree.
+                recordings = {}
+                for item in data['recordings']:
+                    recordings.setdefault(item['id'], item)
+                tracks = [musicbrainz_track(item) for item in recordings.values()]
         except (KeyError, TypeError, ValueError) as error:
             raise DiscoveryError("External catalogue returned an unexpected track response.") from error
         for track in tracks: cache_put("selection:" + track["key"], track, 86400)

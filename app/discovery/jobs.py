@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import case, update
 from sqlalchemy.dialects.sqlite import insert
 from app.database.connection import get_session
-from app.database.models import Song, SongRequest, SongSource
+from app.database.models import Song, SongRequest, SongSource, SongRequestPlaylist
 from app.services.library import LibraryService
 from app.services.playlist_metadata import song_metadata_query
 from .catalogue import DiscoveryError, cache_get
@@ -22,7 +22,7 @@ def source_song(db, key):
     return None
 
 
-def job_dict(job, db, songs=None):
+def job_dict(job, db, songs=None, intents=None):
     song = (songs.get(job.song_id) if songs is not None else LibraryService.get_song_by_id(job.song_id, db)) if job.state == 'ready' and job.song_id else None
     if job.state == 'ready' and song is None:
         # A later library scan/delete may remove the original Song row. Do not
@@ -35,29 +35,57 @@ def job_dict(job, db, songs=None):
         "created_at": job.created_at.isoformat(), "updated_at": job.updated_at.isoformat(),
         "next_attempt_at": job.next_attempt_at.isoformat(), "attempts": job.attempts, "error": job.error,
         "song": song, "resolution": resolved.get('resolution'),
-        "candidates": resolved.get('candidates', []) if job.state == 'awaiting_choice' else []}
+        "candidates": resolved.get('candidates', []) if job.state == 'awaiting_choice' else [],
+        'playlist_intents': intents if intents is not None else _job_intents(job.id, db)}
 
 
-def request_song(key):
+def _job_intents(job_id, db):
+    from .playlist_intents import intent_dict
+    return [intent_dict(row) for row in db.query(SongRequestPlaylist).filter_by(request_id=job_id).order_by(SongRequestPlaylist.id).all()]
+
+
+def find_recording_job(db, key):
+    query = db.query(SongRequest)
+    if key.startswith('musicbrainz:'):
+        query = query.filter(SongRequest.identity_key.like(':'.join(key.split(':')[:2]) + ':%'))
+    else: query = query.filter_by(identity_key=key)
+    return query.order_by(case((SongRequest.state == 'ready', 0), else_=1), SongRequest.created_at.desc()).first()
+
+
+def request_song(key, playlist_id=None, current_user=None):
     if DiscoveryConfig.load().music_dir is None:
         raise DiscoveryError("Set VERSE_MUSIC_DIR and start the request worker before requesting songs.")
     selected = cache_get("selection:" + key)
     with get_session() as db:
+        # Serialize the recording-level read/insert across release variants on
+        # SQLite. Existing distinct recordings/legacy jobs are never merged/deleted.
+        db.execute(update(SongRequest).where(SongRequest.id == '').values(updated_at=SongRequest.updated_at))
+        job = find_recording_job(db, key)
         # Existing IDs remain usable after cache expiry or a server restart.
         # INSERT first avoids SQLite read-to-write transaction upgrades.
         if selected is None:
-            existing = db.query(SongRequest).filter_by(identity_key=key).first()
-            if existing: return job_dict(existing, db)
-            raise DiscoveryError("This search result expired. Search again before requesting it.", status_code=409)
+            if not job: raise DiscoveryError("This search result expired. Search again before requesting it.", status_code=409)
         now = datetime.utcnow()
-        db.execute(insert(SongRequest).values(id=str(uuid.uuid4()), identity_key=key,
-            metadata_json=json.dumps(selected), state="queued", created_at=now, updated_at=now,
-            next_attempt_at=now, attempts=0).on_conflict_do_nothing(index_elements=[SongRequest.identity_key]))
-        job = db.query(SongRequest).filter_by(identity_key=key).one()
+        if not job:
+            prepared = cache_get('resolved-selection:' + key)
+            db.execute(insert(SongRequest).values(id=str(uuid.uuid4()), identity_key=key,
+                metadata_json=json.dumps(selected), state='awaiting_choice' if prepared and prepared.get('selection_required') else 'queued',
+                resolved_json=json.dumps(prepared) if prepared else None, created_at=now, updated_at=now,
+                next_attempt_at=now, attempts=0).on_conflict_do_nothing(index_elements=[SongRequest.identity_key]))
+            job = db.query(SongRequest).filter_by(identity_key=key).one()
         song_id = source_song(db, key)
         if song_id and job.state not in ("resolving", "downloading", "indexing"):
             job.state = "ready"; job.song_id = song_id; job.error = None; job.updated_at = now
-        return job_dict(job, db)
+        if playlist_id is not None:
+            from .playlist_intents import attach_intent
+            attach_intent(db, job, playlist_id, current_user)
+            if job.state == 'failed':
+                job.state = 'queued'; job.attempts = 0; job.error = None; job.next_attempt_at = now
+        job_id = job.id
+    if playlist_id is not None:
+        from .playlist_intents import fulfill_ready_intents
+        fulfill_ready_intents(job_id)
+    with get_session() as db: return job_dict(db.get(SongRequest, job_id), db)
 
 
 def list_jobs(limit=100):
@@ -65,7 +93,11 @@ def list_jobs(limit=100):
         jobs = db.query(SongRequest).order_by(case((SongRequest.state.in_(["queued", "resolving", "downloading", "indexing", "awaiting_choice"]), 0), else_=1), SongRequest.created_at.desc()).limit(limit).all()
         ids = [job.song_id for job in jobs if job.state == "ready" and job.song_id]
         songs = {row.id: dict(row._mapping) for row in song_metadata_query(db).filter(Song.id.in_(ids)).all()} if ids else {}
-        return [job_dict(job, db, songs) for job in jobs]
+        from .playlist_intents import intent_dict
+        intents = {}
+        for row in db.query(SongRequestPlaylist).filter(SongRequestPlaylist.request_id.in_([job.id for job in jobs])).all():
+            intents.setdefault(row.request_id, []).append(intent_dict(row))
+        return [job_dict(job, db, songs, intents.get(job.id, [])) for job in jobs]
 
 
 def retry_job(job_id):

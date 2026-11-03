@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../app/web/index.js'), 'utf8');
+const source = ['index.js','catalogue.js'].map(file=>fs.readFileSync(path.join(__dirname, '../app/web', file),'utf8')).join('\n');
 const html = fs.readFileSync(path.join(__dirname, '../app/web/index.html'), 'utf8');
 const song = (id, artwork = true) => ({id, title: `Title ${id}`, artist: `Artist ${id}`, album: `Album ${id}`, artwork_available: artwork, duration: 180});
 const response = data => ({ok: true, status: 200, json: async () => data});

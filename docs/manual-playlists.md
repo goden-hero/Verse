@@ -7,7 +7,9 @@
    option; the recommendation generator is unchanged.
 2. Enter a name and optional description. Empty playlists open normally with an
    **Add songs** action. Playback buttons are disabled while the playlist is empty.
-3. Search by title, artist, or album. Search queries the entire database, not the
+3. Use **Select library songs** beside the library filters, or **Add songs** in an
+   open playlist, for bulk selection. This is separate from the main MusicBrainz
+   catalogue search. Search by title, artist, or album. The bulk tool queries the entire database, not the
    current 100-song library page. Click a row or checkbox to select; use the
    separate **Play** button to listen without losing selections.
 4. Selection persists across queries and closing/reopening search. The selection
@@ -22,6 +24,11 @@
    selections and form values; retry without refreshing the page.
 
 ## Append semantics
+
+The primary search is now a MusicBrainz-only catalogue. Opening a recording reveals
+its Play/Download/Add actions; missing-song additions retain a destination and
+append after indexing. That flow is separate from this full-library bulk tool;
+see the [search redesign report](musicbrainz-search-redesign-2026-11-03.md).
 
 `POST /api/v1/playlists/{playlist_id}/songs` accepts a nonempty `song_ids` array
 of positive integers. New songs append in first-selection/request order after the

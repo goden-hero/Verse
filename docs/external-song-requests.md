@@ -5,6 +5,10 @@ the running instance. Verse-test was subsequently activated and live-verified;
 see the [2026-11-03 activation report](external-song-requests-activation-2026-11-03.md).
 The later [recording-resolution fix and Fly Away live check](request-resolution-2026-11-03.md)
 adds metadata fallback and version selection without a database migration.
+The [MusicBrainz-only search redesign](musicbrainz-search-redesign-2026-11-03.md)
+is now active on Verse-test, including migration `7b8c9d0e1f2a` for persistent
+download-then-add playlist intents. Its minimal search/panel flow supersedes the
+earlier combined local/external overlay.
 
 ## Configuration and activation
 
@@ -27,8 +31,10 @@ The worker and API should run as the same OS account with access to the database
 music directory and any spotDL cookie/config files. `DATABASE_URL` must be identical
 for both processes. Restart the API after changing its environment.
 
-`auto` selects official Spotify discovery when both credentials below exist,
-otherwise MusicBrainz:
+The public `/search/external` endpoint and main overlay always use MusicBrainz,
+regardless of `VERSE_CATALOGUE` or optional Spotify credentials. Internal catalogue
+helpers retain `auto` (official Spotify when both credentials exist, otherwise
+MusicBrainz), and acquisition still uses its existing recording resolver:
 
 ```dotenv
 VERSE_SPOTIFY_CLIENT_ID=your-own-spotify-client-id
@@ -111,12 +117,17 @@ shell command. [spotDL usage](https://spotdl.github.io/spotify-downloader/usage/
 
 ## Recording resolution, processing, recovery
 
-The same search overlay contains separate **In your library** and **Available to
-request** sections. Local results do not wait for external calls. External searches
-are debounced, have cancellation/generation guards, and use a persistent TTL cache
+The main overlay is one minimal MusicBrainz-only list: artwork where available,
+title, artist and optional duration. It has no checkboxes, provider groups or song
+action buttons. Debounced search never queries songs, sources or request jobs.
+It deduplicates recording MBIDs, not distinct recordings sharing a title. Searches
+have cancellation/generation guards and use a persistent TTL cache
 (five minutes for hits, thirty seconds for empty results). Selected-result snapshots
 last 24 hours and survive API restarts. Requests use these server-side snapshots,
-not arbitrary client-supplied URLs/metadata. Previously created jobs remain usable
+not arbitrary client-supplied URLs/metadata. Only opening a recording calls
+`GET /catalogue/recordings/{mbid}` to check library/request availability using saved
+identities and the existing full-detail/ranked resolver when needed. Selection
+does not queue, play or download. Previously created jobs remain usable
 after snapshot expiry.
 
 Spotify track IDs are exact identities. MusicBrainz identities include both the
@@ -223,8 +234,12 @@ the newly indexed song to a playlist, and neither is automatically run inline.
 The app polls active requests every three seconds without overlapping polls;
 terminal and awaiting-choice history refreshes on opening search, visibility or an
 explicit Refresh. State rehydrates after reload/sign-in; failed polls
-retain previous content and expose Refresh. Ready results become normal Play/Add
-actions using the existing persistent audio player and playlist picker. Request
+retain previous content and expose Refresh. Ready recordings expose Play/Add in
+the selected-song panel, not the catalogue rows. Missing recordings expose
+Download/Add; choosing a playlist persists its destination and appends once indexing
+succeeds. Failed downloads retain destinations. Failed/deleted destinations do not
+make the indexed song fail. The persistent audio player and playlist picker are
+reused. Request
 updates patch their own rows, not the library table or playback queue.
 
 API endpoints: `GET /search/external`, `POST /song-requests`, `GET /song-requests`,
@@ -234,11 +249,12 @@ Submitting/retrying requests requires the existing signed-in session.
 
 ## Validation and remaining limits
 
-The combined relevant regression suite passed **154 tests** after the resolution fix. Existing datetime/
+The combined relevant regression suite passed **167 tests** after the catalogue redesign. Existing datetime/
 framework deprecation warnings remain. The test command was:
 
 ```bash
 .venv/bin/python -m pytest -q \
+  tests/test_catalogue_workflow.py \
   tests/test_discovery_requests.py tests/test_manual_playlists.py \
   tests/test_media_session.py tests/test_playlist_read_performance.py \
   tests/test_playlist_services.py tests/test_playlist_api_routes.py \
