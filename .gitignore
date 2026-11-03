@@ -11,3 +11,20 @@ data/
 music_rec.egg-info/
 openl3_test/
 branch/
+
+# Android release secrets and local build tools must never be committed.
+.private/
+*.keystore
+*.jks
+*.p12
+*.pem
+android/**/node_modules/
+android/**/.gradle/
+android/**/.gradle-user-home/
+android/**/build/
+android/**/local.properties
+android/**/bubblewrap-config.json
+android/**/releases/
+android/**/*.apk
+android/**/*.aab
+android/**/*.idsig

@@ -1,0 +1,62 @@
+/* TWA and browser share the same responsive UI, cookies and media element.
+   resizes-content in the viewport meta makes Chrome resize for the keyboard. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+.auth-shell {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: max(24px, var(--safe-top)) max(24px, var(--safe-right))
+    max(24px, var(--safe-bottom)) max(24px, var(--safe-left));
+}
+
+/* Auto margins keep the top of a tall login form reachable with the keyboard. */
+.auth-panel { margin-block: auto; flex-shrink: 0; }
+
+@media (max-width: 767px) {
+  .auth-shell input, .auth-shell select, .auth-shell textarea { font-size: 16px; }
+  .mobile-header {
+    height: calc(56px + var(--safe-top));
+    padding: var(--safe-top) max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
+  }
+  .mobile-bottom-nav {
+    height: calc(60px + var(--safe-bottom));
+    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+  .mobile-mini-player {
+    bottom: calc(60px + var(--safe-bottom));
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+  }
+  .center-content {
+    padding: calc(72px + var(--safe-top)) max(16px, var(--safe-right))
+      calc(130px + var(--safe-bottom)) max(16px, var(--safe-left)) !important;
+  }
+  .search-overlay, .search-overlay-content, .mobile-full-player,
+  .mobile-drawer-overlay, .mobile-assistant-drawer-overlay {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+  .search-overlay-content {
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+  .mobile-full-player {
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  }
+  .mobile-drawer {
+    padding: max(20px, var(--safe-top)) max(16px, var(--safe-right))
+      max(20px, var(--safe-bottom)) max(16px, var(--safe-left));
+    overflow-y: auto;
+  }
+  .mobile-assistant-drawer { padding-bottom: max(20px, var(--safe-bottom)); }
+}
+
+@media (max-width: 767px) and (max-height: 450px) {
+  .auth-panel { padding: 18px; }
+  .auth-brand-row { margin-bottom: 12px; }
+}

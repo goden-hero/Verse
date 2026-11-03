@@ -1,0 +1,46 @@
+{
+  "packageId": "org.dpdns.verse786.twa",
+  "host": "verse786.dpdns.org",
+  "name": "Verse",
+  "launcherName": "Verse",
+  "display": "standalone",
+  "themeColor": "#080610",
+  "themeColorDark": "#080610",
+  "navigationColor": "#080610",
+  "navigationColorDark": "#080610",
+  "navigationDividerColor": "#080610",
+  "navigationDividerColorDark": "#080610",
+  "backgroundColor": "#080610",
+  "enableNotifications": false,
+  "enableSiteSettingsShortcut": false,
+  "startUrl": "/",
+  "iconUrl": "https://verse786.dpdns.org/icons/verse-512.png",
+  "maskableIconUrl": "https://verse786.dpdns.org/icons/verse-maskable-512.png",
+  "splashScreenFadeOutDuration": 200,
+  "signingKey": {
+    "path": "../../.private/android-signing/verse-release.keystore",
+    "alias": "verse-release"
+  },
+  "appVersion": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://verse786.dpdns.org/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://verse786.dpdns.org/",
+  "minSdkVersion": 24,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "Verse direct distribution release",
+      "value": "C9:B2:52:D1:F8:69:0E:C0:29:B1:C3:8F:86:74:6F:4D:4B:3D:D7:89:3B:AF:40:15:D1:DA:98:D8:11:96:A5:99"
+    }
+  ],
+  "additionalTrustedOrigins": []
+}

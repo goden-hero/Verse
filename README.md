@@ -241,6 +241,10 @@ configuration and a worker; it is not automatically deployed or started.
 
 ## Testing
 
+The hosted web application can also be shared as a signed Android APK using the
+[Bubblewrap/TWA project](android/verse-twa/README.md). See the
+[Android installation guide](android/verse-twa/INSTALL.md) for friends.
+
 Run the full pytest suite to verify scanner, metadata extraction, database models, features, FAISS search, recommendation logic, AI orchestrator, and desktop layouts:
 ```bash
 # Run all tests

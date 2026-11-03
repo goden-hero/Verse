@@ -1,0 +1,15 @@
+{
+  "bubblewrapCli": "1.27.0",
+  "nodeMajor": 22,
+  "javaVersion": "17.0.21+9",
+  "javaLinuxX64Url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz",
+  "javaArchiveSha256": "8b9b611d917e3dfd8419d3566b5949226f69b052fed7e109c1368add1dfe8711",
+  "androidCommandLineTools": "19.0",
+  "androidCommandLineToolsLinuxUrl": "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip",
+  "androidCommandLineToolsArchiveSha256": "7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee",
+  "androidPackages": ["platforms;android-36", "build-tools;36.1.0", "platform-tools"],
+  "gradle": "8.11.1",
+  "gradleDistributionSha256": "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6",
+  "androidGradlePlugin": "8.9.1",
+  "androidBrowserHelper": "2.7.4"
+}
