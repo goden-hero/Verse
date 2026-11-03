@@ -302,6 +302,12 @@ def main() -> None:
         help="Path to the music folder to scan.",
     )
 
+    request_parser = subparsers.add_parser("request-worker", help="Process persistent song requests (one worker per music directory).")
+    request_parser.add_argument("--once", action="store_true", help="Process at most one due request, then exit.")
+    request_parser.add_argument("--backfill-identities", action="store_true", help="Import exact Spotify source tags from existing library files on startup.")
+    enrich_file_parser = subparsers.add_parser("request-enrich", help="Optional expensive analysis of one ready song, separate from the request worker.")
+    enrich_file_parser.add_argument("song_id", type=int)
+
     # enrich-semantic subcommand
     enrich_parser = subparsers.add_parser(
         "enrich-semantic",
@@ -385,6 +391,12 @@ def main() -> None:
         run_config(args)
     elif args.command == "scan":
         run_scan(args)
+    elif args.command == "request-worker":
+        from app.discovery.worker import run_worker
+        run_worker(once=args.once, backfill=args.backfill_identities)
+    elif args.command == "request-enrich":
+        from app.indexing.enrich_file import enrich_single_song
+        enrich_single_song(args.song_id, _default_vector_index_path())
     elif args.command == "enrich-semantic":
         run_enrich_semantic(args)
     elif args.command == "play":

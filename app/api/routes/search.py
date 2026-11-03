@@ -9,10 +9,10 @@ router = APIRouter(tags=["Search"])
 
 @router.get("/search", response_model=List[SongResponse])
 def search_songs(
-    q: str = Query(default="", description="Search query string matching title or artist"),
+    q: str = Query(default="", description="Search query string matching title, artist, or album"),
     db: Session = Depends(get_db)
 ):
-    """Searches and ranks songs based on query string matching title and artist."""
+    """Searches the complete library by title, artist, or album."""
     # Ignore leading/trailing whitespace
     clean_query = q.strip()
     if not clean_query:

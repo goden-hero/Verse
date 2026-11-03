@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from fastapi import APIRouter, Depends, Query, Response, HTTPException, Header
+from fastapi import APIRouter, Depends, Query, Request, Response, HTTPException, Header
+from app.api.images import default_artwork, image_response, now_playing_artwork
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from app.api.dependencies import get_db
@@ -9,6 +10,12 @@ from app.services.library import LibraryService
 from app.database.models import Song
 
 router = APIRouter(tags=["Songs"])
+
+
+@router.get("/artwork/default")
+def get_default_artwork(request: Request):
+    """Same-origin system-player fallback, with exactly 512×512 PNG pixels."""
+    return image_response(default_artwork(), request, "image/png")
 
 def _get_media_type(path_str: str) -> str:
     ext = Path(path_str).suffix.lower()
@@ -49,12 +56,15 @@ def get_song(song_id: int, db: Session = Depends(get_db)):
     return song
 
 @router.get("/songs/{song_id}/artwork")
-def get_song_artwork(song_id: int, db: Session = Depends(get_db)):
-    """Serves the raw binary cover art image for a song if available."""
+def get_song_artwork(song_id: int, request: Request, fallback: bool = False, db: Session = Depends(get_db)):
+    """Original cover by default; opt-in system artwork is always a valid image."""
     artwork_bytes = LibraryService.get_song_artwork(song_id, db)
+    if fallback:
+        data, media_type = now_playing_artwork(artwork_bytes)
+        return image_response(data, request, media_type)
     if not artwork_bytes:
         raise HTTPException(status_code=404, detail="Artwork not found")
-    return Response(content=artwork_bytes, media_type="image/jpeg")
+    return image_response(artwork_bytes, request)
 
 @router.get("/songs/{song_id}/stream")
 def stream_song(
@@ -63,7 +73,10 @@ def stream_song(
     db: Session = Depends(get_db)
 ):
     """Streams the audio binary for a song with HTTP Range Requests support."""
-    song_obj = db.get(Song, song_id)
+    song_obj = db.query(Song.path).filter(Song.id == song_id).first()
+    # The response needs only this immutable row. End the read transaction now
+    # rather than holding a pool checkout for the duration of an audio stream.
+    db.rollback()
     if not song_obj or not song_obj.path:
         raise HTTPException(status_code=404, detail="Song or file not found")
     

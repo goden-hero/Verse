@@ -1,6 +1,5 @@
 """Background QThread workers for heavy operations in the desktop UI."""
 
-import hashlib
 import logging
 import pickle
 import time
@@ -9,7 +8,7 @@ from PySide6.QtCore import QThread, Signal
 from sqlalchemy.orm import Session
 from app.database.connection import get_session
 from app.database.models import AudioFeatures, Embeddings, Song, TechnicalMetadata
-from app.indexing.scanner import scan_music_folder
+from app.indexing.scanner import scan_music_folder, compute_file_hash
 from app.metadata.extractor import extract_metadata
 from app.metadata.technical import extract_technical_metadata
 from app.features.extractor import extract_features
@@ -20,15 +19,6 @@ from app.recommendations.registry import get_recommender
 from app.metadata.semantic import OllamaClient
 
 logger = logging.getLogger("music_rec.ui.workers")
-
-
-def compute_file_hash(file_path: Path) -> str:
-    """Computes SHA-256 hash of a file."""
-    hasher = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
 
 
 class ScanWorker(QThread):
@@ -101,6 +91,13 @@ class ScanWorker(QThread):
                         )
                         session.add(song)
                         session.commit()  # commit to generate ID
+                        # Preserve exact source IDs for future in-app requests.
+                        from app.indexing.single_file import spotify_id_from_file
+                        from sqlalchemy.dialects.sqlite import insert
+                        from app.database.models import SongSource
+                        source_id = spotify_id_from_file(file_path)
+                        if source_id:
+                            session.execute(insert(SongSource).values(identity_key="spotify:" + source_id, song_id=song.id).on_conflict_do_nothing())
 
                         # Extract technical metadata
                         tech_meta = extract_technical_metadata(file_path)

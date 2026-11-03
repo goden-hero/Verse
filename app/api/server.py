@@ -33,11 +33,12 @@ app.add_middleware(
 # Register request-scoped CurrentUser context middleware
 app.add_middleware(CurrentUserMiddleware)
 
-from app.api.routes import songs, search, playlists, playback, assistant, auth
+from app.api.routes import songs, search, playlists, playback, assistant, auth, discovery
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(songs.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
+app.include_router(discovery.router, prefix="/api/v1")
 app.include_router(playlists.router, prefix="/api/v1")
 app.include_router(playback.router, prefix="/api/v1")
 app.include_router(assistant.router, prefix="/api/v1")

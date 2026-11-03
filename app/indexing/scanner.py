@@ -1,11 +1,21 @@
 """Folder scanning utility for detecting supported audio files."""
 
 import logging
+import hashlib
 import os
 from pathlib import Path
 from app.config.settings import settings
 
 logger = logging.getLogger("music_rec.indexing.scanner")
+
+
+def compute_file_hash(file_path: Path) -> str:
+    """Shared streaming content identity for full scans and single-file indexing."""
+    hasher = hashlib.sha256()
+    with open(file_path, "rb") as file:
+        for chunk in iter(lambda: file.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def scan_music_folder(folder: Path) -> list[Path]:

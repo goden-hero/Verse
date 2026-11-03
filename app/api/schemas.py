@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,7 +36,18 @@ class PlaylistGenerateRequest(BaseModel):
 class PlaylistCreateRequest(BaseModel):
     """Pydantic model representing a request to create/save a playlist."""
     name: str
-    song_ids: List[int]
+    song_ids: List[Annotated[int, Field(gt=0, strict=True)]] = Field(default_factory=list)
+    description: Optional[str] = None
+
+class PlaylistAppendRequest(BaseModel):
+    """Append in first-selection order; never replace existing memberships."""
+    song_ids: List[Annotated[int, Field(gt=0, strict=True)]] = Field(min_length=1, max_length=5000)
+
+class PlaylistAppendResponse(BaseModel):
+    playlist_id: int
+    added_count: int
+    skipped_count: int
+    songs_count: int
 
 class PlaylistResponse(BaseModel):
     """Pydantic model representing a playlist's basic metadata."""

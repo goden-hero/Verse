@@ -28,6 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+acquisition = ["spotdl>=4.6,<5"]
 dev = [
     "pytest>=7.0.0",
     "pytest-mock>=3.10.0",

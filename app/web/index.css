@@ -13,7 +13,7 @@
   --text-muted: #8e8a9f;
   --font-family-title: 'Outfit', sans-serif;
   --font-family-body: 'Inter', sans-serif;
-  --transition-speed: 0.25s;
+  --transition-speed: 0.18s;
 }
 
 /* Reset & Core Setup */
@@ -266,7 +266,7 @@ button {
   border-radius: 12px;
   color: var(--text-muted);
   font-weight: 500;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .nav-item svg {
@@ -368,7 +368,7 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .playlist-sidebar-item:hover {
@@ -513,7 +513,7 @@ button {
   display: none;
   flex-direction: column;
   gap: 32px;
-  animation: fadeIn 0.4s ease;
+  animation: fadeIn 0.18s ease;
 }
 
 .content-view.active {
@@ -572,7 +572,7 @@ button {
   flex-direction: column;
   gap: 12px;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .playlist-card:hover {
@@ -639,7 +639,7 @@ button {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
   opacity: 0;
   transform: translateY(8px);
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .card-play-btn svg {
@@ -712,7 +712,7 @@ button {
   color: #fff;
   font-family: var(--font-family-body);
   font-size: 14px;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .search-input:focus {
@@ -738,7 +738,7 @@ button {
   border-radius: 10px;
   cursor: pointer;
   outline: none;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .filter-select:hover, .filter-select:focus {
@@ -756,7 +756,7 @@ button {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .filter-btn:hover {
@@ -837,7 +837,7 @@ button {
 .heart-btn, .options-row-btn {
   color: var(--text-muted);
   opacity: 0.6;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .heart-btn:hover {
@@ -933,7 +933,7 @@ button {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-main);
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .pagination-btn:hover:not(:disabled) {
@@ -1161,7 +1161,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .control-btn svg {
@@ -1270,7 +1270,7 @@ button {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
   width: 100%;
 }
 
@@ -1644,7 +1644,7 @@ button {
   padding: 12px 16px;
   border-radius: 12px;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .search-result-item:hover, .search-result-item.highlighted {
@@ -1678,6 +1678,93 @@ button {
 .search-result-duration {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* Manual playlist creation and selection reuse the existing purple controls. */
+.manual-playlist-button {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #fff);
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 12px;
+  min-height: 44px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.manual-playlist-button.primary { background: var(--accent-color); color: #fff; }
+.playlists-section .section-header { flex-wrap: wrap; gap: 8px; }
+.manual-playlist-button:disabled { opacity: .45; cursor: default; }
+.manual-playlist-button:focus-visible, .playlist-picker-option:focus-within { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.search-selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
+.search-selection-toolbar small { flex-basis: 100%; color: var(--text-muted); font-size: 12px; }
+.search-result-item.selected { background: rgba(124, 58, 237, .22); }
+.search-song-checkbox, .playlist-picker-option input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent-color); cursor: pointer; }
+.search-result-play { flex-shrink: 0; }
+.manual-playlist-status { color: var(--text-muted); font-size: 13px; padding: 8px 16px; }
+.manual-playlist-status:empty { display: none; }
+.manual-playlist-dialog {
+  width: min(540px, calc(100% - 24px));
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--border-color-glow);
+  border-radius: 20px;
+  background: #161226;
+  color: var(--text-primary, #fff);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+}
+.manual-playlist-dialog::backdrop { background: rgba(8, 6, 16, .8); }
+.manual-playlist-dialog.dialog-fallback { position: fixed; inset: 0; z-index: 2000; box-shadow: 0 0 0 100vmax rgba(8, 6, 16, .8); }
+.manual-playlist-dialog h2 { font-size: 20px; margin: 0; }
+.manual-playlist-dialog .form-input { width: 100%; box-sizing: border-box; font-size: 16px; }
+.manual-playlist-dialog .form-group { margin-bottom: 16px; }
+.manual-playlist-dialog textarea { resize: vertical; }
+.manual-playlist-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.manual-playlist-error { color: #fda4af; font-size: 14px; }
+.playlist-picker-list { max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; }
+.playlist-picker-option { display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 44px; border-radius: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.playlist-picker-option:has(input:checked) { background: rgba(124, 58, 237, .22); }
+.playlist-picker-option small { color: var(--text-muted); display: block; }
+.playlist-notice { position: fixed; z-index: 2500; top: max(16px, env(safe-area-inset-top)); right: 16px; max-width: min(420px, calc(100vw - 32px)); padding: 14px 18px; background: #28203e; color: #fff; border: 1px solid var(--border-color-glow); border-radius: 12px; overflow-wrap: anywhere; }
+.manual-playlist-dialog [hidden], .search-overlay [hidden] { display: none !important; }
+.discovery-heading { margin: 0; padding: 10px 16px 4px; font-size: 12px; letter-spacing: .8px; color: var(--text-muted); }
+.external-search-section { border-top: 1px solid var(--border-color); }
+.external-result, .song-request-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.external-result-meta { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.external-result-meta strong { display: block; font-size: 14px; }
+.external-result-meta small { display: block; color: var(--text-muted); font-size: 12px; }
+.external-result img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+.external-result-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex-shrink: 0; max-width: 45%; }
+.external-result-error { color: #fda4af; font-size: 12px; }
+.has-version-options { flex-wrap: wrap; }
+.request-version-picker { flex: 1 0 100%; min-width: 0; }
+.request-version-picker summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.request-version-picker p { color: var(--text-muted); font-size: 12px; margin: 0 0 8px; }
+.request-version-option { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border-color); }
+.request-version-option > div { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.request-version-option strong, .request-version-option small { display: block; }
+.request-version-option small { color: var(--text-muted); font-size: 12px; }
+.request-version-option button { min-height: 44px; }
+.song-requests-panel { border-top: 1px solid var(--border-color); padding: 12px 16px; }
+.song-requests-panel summary { cursor: pointer; min-height: 30px; font-size: 13px; }
+#song-requests-list { max-height: 200px; overflow-y: auto; }
+.search-overlay-content { overflow-y: auto; overscroll-behavior: contain; }
+.search-overlay-results { overflow-y: auto; max-height: 30vh; flex-shrink: 0; }
+#external-search-results { max-height: 30vh; overflow-y: auto; }
+.search-overlay-input-row, .search-selection-toolbar { flex-shrink: 0; }
+@media (max-width: 767px) {
+  .search-overlay-content { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
+  .search-overlay-input { min-width: 0; }
+  .search-result-item { padding: 10px 8px; gap: 10px; }
+  .search-result-duration { display: none; }
+  .manual-playlist-dialog { padding: 16px; }
+  .playlist-detail-actions { flex-wrap: wrap; }
 }
 
 /* ==========================================
@@ -1728,7 +1815,7 @@ button {
   font-family: var(--font-family-body);
   font-size: 14px;
   outline: none;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .form-select option {
@@ -1751,7 +1838,7 @@ button {
   border-radius: 12px;
   display: flex;
   align-items: center;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .generate-btn:hover {
@@ -1767,7 +1854,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  animation: fadeIn 0.4s ease;
+  animation: fadeIn 0.18s ease;
 }
 
 .results-header-row {
@@ -1803,7 +1890,7 @@ button {
   font-size: 14px;
   padding: 10px 20px;
   border-radius: 10px;
-  transition: all var(--transition-speed) ease;
+  transition: color var(--transition-speed) ease, background-color var(--transition-speed) ease, border-color var(--transition-speed) ease, opacity var(--transition-speed) ease, transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
 }
 
 .save-playlist-btn:hover {
@@ -1817,7 +1904,7 @@ button {
   background: var(--border-color);
   cursor: col-resize;
   z-index: 10;
-  transition: background 0.2s, width 0.2s, box-shadow 0.2s;
+  transition: background-color 0.18s, box-shadow 0.18s;
   flex-shrink: 0;
   position: relative;
 }
@@ -1833,7 +1920,7 @@ button {
 }
 
 .resizer:hover, .resizer.resizing {
-  width: 4px;
+  width: 1px;
   background: var(--accent-color);
   box-shadow: 0 0 10px var(--accent-color);
 }
@@ -1882,7 +1969,7 @@ button {
   padding: 6px 14px;
   font-size: 12px;
   color: var(--text-muted);
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .clear-chat-btn:hover {
   color: var(--text-main);
@@ -1912,7 +1999,7 @@ button {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   font-size: 13px;
 }
 .suggestion-chip:hover {
@@ -2009,7 +2096,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .chat-playlist-btn:hover {
   background: var(--accent-hover);
@@ -2033,7 +2120,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .chat-action-btn:hover {
   color: var(--text-main);
@@ -2073,7 +2160,7 @@ button {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .chat-send-btn:hover {
   background: var(--accent-hover);
@@ -2106,7 +2193,7 @@ button {
   justify-content: center;
   cursor: pointer;
   border: none;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 #view-assistant .chat-input-wrapper {
@@ -2224,7 +2311,7 @@ button {
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .assistant-play-all-btn:hover {
   background: var(--accent-hover);
@@ -2333,7 +2420,7 @@ button {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 .assistant-sidebar-regen-btn:hover {
   background: rgba(124, 58, 237, 0.25);
@@ -2363,7 +2450,7 @@ button {
   border-radius: 12px;
   padding: 14px;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   display: flex;
   flex-direction: column;
 }
@@ -2406,7 +2493,7 @@ button {
   justify-content: center;
   opacity: 0;
   transform: translateY(8px);
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   box-shadow: 0 4px 15px rgba(124, 58, 237, 0.5);
 }
 
@@ -2452,7 +2539,7 @@ button {
   align-items: center;
   gap: 16px;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 .continue-card:hover {
@@ -2517,7 +2604,7 @@ button {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
 }
 
@@ -2543,7 +2630,7 @@ button {
   padding: 8px 16px;
   border-radius: 20px;
   margin-bottom: 24px;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 .back-nav-btn svg {
@@ -2631,7 +2718,7 @@ button {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 .playlist-top-more-btn:hover {
@@ -2776,7 +2863,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
   cursor: pointer;
 }
@@ -2803,7 +2890,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
   cursor: pointer;
 }
 
@@ -2843,7 +2930,7 @@ button {
   border-radius: 10px;
   padding: 8px 14px;
   width: 240px;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 .playlist-table-search-box:focus-within {
@@ -2900,7 +2987,7 @@ button {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-speed);
+  transition: color var(--transition-speed), background-color var(--transition-speed), border-color var(--transition-speed), opacity var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed);
 }
 
 .playlist-view-opts-btn:hover {
@@ -2932,6 +3019,7 @@ button {
   width: 3px;
   background: var(--accent-color);
   border-radius: 2px;
+  transform-origin: bottom;
   animation: eqBounce 1s ease-in-out infinite alternate;
 }
 
@@ -2940,8 +3028,8 @@ button {
 .playing-eq-bar span:nth-child(3) { height: 40%; animation-delay: 0.2s; }
 
 @keyframes eqBounce {
-  0% { height: 20%; }
-  100% { height: 100%; }
+  0% { transform: scaleY(0.2); }
+  100% { transform: scaleY(1); }
 }
 
 /* ==========================================================================
@@ -3416,9 +3504,11 @@ button {
 
   .mini-player-top-progress {
     height: 2px;
-    width: 0%;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left;
     background: var(--accent-color);
-    transition: width 0.3s linear;
+    transition: transform 0.18s linear;
   }
 
   .mini-player-content {
@@ -3785,4 +3875,15 @@ button {
   button:active, .playlist-card:active {
     transform: scale(0.97) !important;
   }
+}
+
+/* Loading failures preserve the last successful content and offer local recovery. */
+.resource-error { display: flex; align-items: center; gap: 12px; padding: 10px; color: #fca5a5; font-size: 13px; }
+.resource-error button, .queue-pagination button { color: var(--text-main); border: 1px solid var(--border-color-glow); border-radius: 6px; padding: 5px 10px; }
+.resource-error button:hover, .queue-pagination button:hover { background: var(--bg-card-hover); }
+.queue-pagination { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--text-muted); padding: 8px 0; }
+.queue-pagination button:disabled { opacity: 0.4; cursor: default; }
+.playlist-pending { padding: 24px; color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

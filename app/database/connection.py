@@ -66,12 +66,14 @@ from contextlib import contextmanager
 
 @contextmanager
 def get_session() -> Generator[Session, None, None]:
-    """Dependency / generator context manager for db sessions.
+    """Yield an independent Session, then commit/rollback and always close it.
 
-    Yields:
-        A thread-safe SQLAlchemy Session object.
+    FastAPI may move a request between worker threads; no other request may use
+    this Session concurrently. Desktop/CLI scopes get the same isolation.
     """
-    session = SessionLocal()
+    # Worker threads are reused while a yield dependency is still active. A
+    # thread-local scoped_session can therefore be shared by unrelated requests.
+    session = SessionFactory()
     try:
         yield session
         session.commit()

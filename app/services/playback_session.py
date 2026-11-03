@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database.models import PlaybackSession, Playlist
 from app.identity import CurrentUser
+from app.services.playlist_metadata import song_totals, playlist_metadata_query, playlist_metadata_dict
 
 logger = logging.getLogger("music_rec.services.playback_session")
 
@@ -123,8 +124,13 @@ class PlaybackSessionService:
             .subquery()
         )
 
+        totals = song_totals(session)
         latest_sessions = (
-            session.query(PlaybackSession)
+            session.query(PlaybackSession, Playlist.name,
+                          func.coalesce(totals.c.songs_count, 0),
+                          func.coalesce(totals.c.total_duration, 0.0))
+            .join(Playlist, Playlist.id == PlaybackSession.playlist_id)
+            .outerjoin(totals, totals.c.playlist_id == Playlist.id)
             .join(
                 subquery,
                 (PlaybackSession.playlist_id == subquery.c.playlist_id)
@@ -136,15 +142,12 @@ class PlaybackSessionService:
         )
 
         results = []
-        for s in latest_sessions:
-            if not s.playlist or s.playlist.user_id != user_id:
-                continue
-            total_duration = sum((ps.song.duration or 0.0) for ps in s.playlist.songs)
+        for s, name, count, total_duration in latest_sessions:
             results.append({
                 "session_id": s.id,
                 "playlist_id": s.playlist_id,
-                "playlist_name": s.playlist.name,
-                "song_count": len(s.playlist.songs),
+                "playlist_name": name,
+                "song_count": count,
                 "total_duration": total_duration,
                 "current_song_index": s.current_song_index,
                 "current_position": s.current_position,
@@ -176,7 +179,7 @@ class PlaybackSessionService:
         )
 
         recent = (
-            session.query(Playlist, subquery.c.last_played)
+            playlist_metadata_query(session, user_id)
             .join(subquery, Playlist.id == subquery.c.playlist_id)
             .filter(Playlist.user_id == user_id)
             .order_by(subquery.c.last_played.desc())
@@ -184,19 +187,7 @@ class PlaybackSessionService:
             .all()
         )
 
-        results = []
-        for playlist, last_played in recent:
-            total_duration = sum((ps.song.duration or 0.0) for ps in playlist.songs)
-            results.append({
-                "id": playlist.id,
-                "name": playlist.name,
-                "created_at": playlist.created_at.isoformat(),
-                "last_played_at": last_played.isoformat() if last_played else None,
-                "generated_by": playlist.generated_by,
-                "song_count": len(playlist.songs),
-                "total_duration": total_duration,
-            })
-        return results
+        return [dict(playlist_metadata_dict(row), song_count=row.songs_count) for row in recent]
 
     @staticmethod
     def get_playlist_stats(
@@ -207,26 +198,10 @@ class PlaybackSessionService:
         """Computes dynamic statistics (play_count, last_played_at) for a user-owned playlist."""
         user_id = current_user.id or 1
 
-        playlist = (
-            session.query(Playlist)
-            .filter_by(id=playlist_id, user_id=user_id)
-            .first()
-        )
-        if not playlist:
+        row = playlist_metadata_query(session, user_id).filter(Playlist.id == playlist_id).first()
+        if not row:
             return {"play_count": 0, "last_played_at": None}
-
-        play_count = (
-            session.query(func.count(PlaybackSession.id))
-            .filter(PlaybackSession.playlist_id == playlist_id)
-            .scalar()
-            or 0
-        )
-        last_played = (
-            session.query(func.max(PlaybackSession.started_at))
-            .filter(PlaybackSession.playlist_id == playlist_id)
-            .scalar()
-        )
         return {
-            "play_count": play_count,
-            "last_played_at": last_played.isoformat() if last_played else None,
+            "play_count": row.play_count,
+            "last_played_at": row.last_played_at.isoformat() if row.last_played_at else None,
         }

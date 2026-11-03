@@ -8,6 +8,7 @@ from app.config.settings import settings, PROJECT_ROOT
 
 from app.database.models import Embeddings, Song, SemanticTags
 from app.search.index import FAISSIndex
+from app.services.playlist_metadata import song_metadata_query
 
 
 SYNONYMS = {
@@ -53,17 +54,18 @@ class SearchService:
 
     @staticmethod
     def ranked_metadata_search(query: str, session: Session) -> list[dict]:
-        """Queries database and returns search results ranked by title/artist match priority."""
+        """Search the entire library by title/artist/album, without artwork blobs."""
         query_clean = query.strip().lower()
         if not query_clean:
             return []
 
         term = f"%{query_clean}%"
         songs = (
-            session.query(Song)
+            song_metadata_query(session)
             .filter(
                 Song.title.ilike(term)
                 | Song.artist.ilike(term)
+                | Song.album.ilike(term)
             )
             .all()
         )
@@ -95,8 +97,8 @@ class SearchService:
                 "artist": s.artist,
                 "album": s.album,
                 "duration": s.duration,
-                "genre": s.original_genre,
-                "artwork_available": s.cover_art is not None,
+                "genre": s.genre,
+                "artwork_available": s.artwork_available,
             }
             for s in ranked_songs
         ]

@@ -1,6 +1,7 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from app.api.images import image_response
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.api.dependencies import get_db, get_current_user, CurrentUser
@@ -8,6 +9,8 @@ from app.api.schemas import (
     SongResponse,
     PlaylistGenerateRequest,
     PlaylistCreateRequest,
+    PlaylistAppendRequest,
+    PlaylistAppendResponse,
     PlaylistUpdateRequest,
     PlaylistResponse,
     PlaylistDetailResponse,
@@ -17,7 +20,7 @@ from app.api.schemas import (
     PlaybackSessionResponse,
     ContinueListeningResponse,
 )
-from app.database.models import Song
+from app.database.models import Song, Playlist
 from app.services.playlist import PlaylistService
 from app.services.playback_session import PlaybackSessionService
 from app.services.playlist_artwork import PlaylistArtworkService
@@ -201,6 +204,7 @@ def create_playlist(
         playlist_id = PlaylistService.create_playlist(
             current_user=current_user,
             name=payload.name.strip(),
+            description=payload.description.strip() if payload.description is not None else None,
             prompt=None,
             strategy="custom",
             generated_by="User",
@@ -215,13 +219,36 @@ def create_playlist(
             commit=False,
         )
         db.commit()
-        return {"id": playlist_id, "name": payload.name, "message": "Playlist saved successfully."}
+        return {"id": playlist_id, "name": payload.name.strip(), "songs_count": len(song_ids),
+                "added_count": len(song_ids), "skipped_count": len(payload.song_ids) - len(song_ids),
+                "message": "Playlist saved successfully."}
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save playlist: {str(e)}"
         )
+
+@router.post("/playlists/{playlist_id}/songs", response_model=PlaylistAppendResponse)
+def append_playlist_songs(
+    playlist_id: int,
+    payload: PlaylistAppendRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Append songs in request order; repeated submissions safely skip duplicates."""
+    if playlist_id <= 0:
+        raise HTTPException(status_code=422, detail="Playlist ID must be positive.")
+    try:
+        return PlaylistService.append_songs_to_playlist(current_user, playlist_id, payload.song_ids, db)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Failed to append playlist songs")
+        raise HTTPException(status_code=500, detail="Unable to add songs. Please try again.") from error
+
 
 @router.get("/playlists/continue-listening", response_model=List[ContinueListeningResponse])
 def get_continue_listening(
@@ -242,12 +269,13 @@ def get_continue_listening(
 def list_playlists(
     section: str = Query("all", description="Section filter: 'recently_played', 'recently_added', or 'all'"),
     limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Retrieves metadata of playlists for the current user."""
     try:
-        return PlaylistService.get_playlists(current_user=current_user, session=db, section=section, limit=limit)
+        return PlaylistService.get_playlists(current_user=current_user, session=db, section=section, limit=limit, offset=offset)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -334,20 +362,7 @@ def get_playlist_songs(
         if not playlist_songs:
             return []
         
-        detailed_songs = []
-        for ps in playlist_songs:
-            song = db.get(Song, ps["id"])
-            if song:
-                detailed_songs.append({
-                    "id": song.id,
-                    "title": song.title,
-                    "artist": song.artist,
-                    "album": song.album,
-                    "duration": song.duration,
-                    "genre": song.original_genre or "Unknown",
-                    "artwork_available": song.cover_art is not None
-                })
-        return detailed_songs
+        return playlist_songs
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -362,7 +377,7 @@ def start_playlist_playback(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Triggers playback start for a playlist and creates a new PlaybackSession."""
-    playlist = PlaylistService.get_playlist_details(current_user, playlist_id, db)
+    playlist = db.query(Playlist.id).filter_by(id=playlist_id, user_id=current_user.id or 1).first()
     if not playlist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -397,7 +412,7 @@ def resume_playlist_playback(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Resumes active playback session for a playlist."""
-    playlist = PlaylistService.get_playlist_details(current_user, playlist_id, db)
+    playlist = db.query(Playlist.id).filter_by(id=playlist_id, user_id=current_user.id or 1).first()
     if not playlist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -467,13 +482,14 @@ def update_playlist_playback_progress(
 @router.get("/playlists/{playlist_id}/cover")
 def get_playlist_cover(
     playlist_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Streams dynamic composite cover artwork JPEG binary for a playlist."""
     try:
         binary_cover = PlaylistArtworkService.generate_cover(playlist_id, db)
-        return Response(content=binary_cover, media_type="image/jpeg")
+        return image_response(binary_cover, request)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

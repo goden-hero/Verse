@@ -4,12 +4,14 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from app.database.models import Playlist, PlaylistSong, Song, SemanticTags
 from app.identity import CurrentUser
 from app.services.search import SearchService, _expand_terms
 from app.services.recommendation import RecommendationService
 from app.recommendations.selector import map_ui_to_backend_strategy
+from app.services.playlist_metadata import playlist_metadata_query, playlist_metadata_dict, song_metadata_query
 
 logger = logging.getLogger("music_rec.services.playlist")
 
@@ -448,7 +450,10 @@ class PlaylistService:
         session: Session,
         commit: bool = True,
     ) -> None:
-        """Appends a list of song IDs to the user-owned playlist with positional ordering."""
+        """Replace memberships (legacy generated-playlist/edit ordering helper).
+
+        For non-destructive manual additions use append_songs_to_playlist instead.
+        """
         user_id = current_user.id or 1
         song_ids = song_ids or []
 
@@ -481,6 +486,60 @@ class PlaylistService:
         logger.info("Added %d songs to playlist id %d for user %s", len(song_ids), playlist_id, user_id)
 
     @staticmethod
+    def append_songs_to_playlist(
+        current_user: CurrentUser,
+        playlist_id: int,
+        song_ids: list[int],
+        session: Session,
+    ) -> dict:
+        """Atomically append unique valid IDs, retaining every existing position.
+
+        The first statement is a write, not a read-then-write lock upgrade. This
+        serializes concurrent SQLite appenders before they inspect memberships;
+        on row-locking databases it locks the destination row. The composite
+        membership primary key also enforces uniqueness. No schema change needed.
+        """
+        try:
+            if not song_ids or any(type(sid) is not int or sid <= 0 for sid in song_ids):
+                raise ValueError("Provide one or more positive integer song IDs.")
+            locked = session.execute(
+                update(Playlist).where(
+                    Playlist.id == playlist_id,
+                    Playlist.user_id == (current_user.id or 1),
+                ).values(updated_at=Playlist.updated_at).returning(Playlist.id)
+                .execution_options(synchronize_session=False)
+            ).first()
+            if not locked:
+                raise LookupError(f"Playlist with ID {playlist_id} not found.")
+
+            ordered_ids = list(dict.fromkeys(song_ids))
+            found = {sid for (sid,) in session.query(Song.id).filter(Song.id.in_(ordered_ids)).all()}
+            missing = [sid for sid in ordered_ids if sid not in found]
+            if missing:
+                raise ValueError(f"One or more songs no longer exist: {missing}.")
+            memberships = session.query(PlaylistSong.song_id, PlaylistSong.position).filter_by(playlist_id=playlist_id).all()
+            existing = {row.song_id for row in memberships}
+            additions = [sid for sid in ordered_ids if sid not in existing]
+            start = max((row.position for row in memberships), default=-1) + 1
+            session.add_all([
+                PlaylistSong(playlist_id=playlist_id, song_id=sid, position=start + index)
+                for index, sid in enumerate(additions)
+            ])
+            if additions:
+                session.execute(update(Playlist).where(Playlist.id == playlist_id).values(updated_at=datetime.utcnow()))
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+        if additions:
+            from app.services.playlist_artwork import PlaylistArtworkService
+            PlaylistArtworkService.invalidate_cover(playlist_id)
+        return {"playlist_id": playlist_id, "added_count": len(additions),
+                "skipped_count": len(song_ids) - len(additions),
+                "songs_count": len(memberships) + len(additions)}
+
+    @staticmethod
     def update_playlist(
         current_user: CurrentUser,
         playlist_id: int,
@@ -506,7 +565,6 @@ class PlaylistService:
             playlist.description = description.strip()
 
         playlist.updated_at = datetime.utcnow()
-        session.commit()
 
         if song_ids is not None:
             PlaylistService.add_songs_to_playlist(
@@ -514,8 +572,9 @@ class PlaylistService:
                 playlist_id=playlist_id,
                 song_ids=song_ids,
                 session=session,
+                commit=False,
             )
-
+        session.commit()
         return True
 
     @staticmethod
@@ -524,6 +583,7 @@ class PlaylistService:
         session: Session,
         section: str = "all",
         limit: int = 50,
+        offset: int = 0,
     ) -> list[dict]:
         """Retrieves metadata of playlists for the current user with optional section filtering."""
         user_id = current_user.id or 1
@@ -534,38 +594,13 @@ class PlaylistService:
                 current_user=current_user, limit=limit, session=session
             )
 
-        query = session.query(Playlist).filter(Playlist.user_id == user_id)
+        query = playlist_metadata_query(session, user_id)
         if section == "recently_added":
             query = query.order_by(Playlist.created_at.desc())
         else:
             query = query.order_by(Playlist.updated_at.desc())
 
-        playlists = query.limit(limit).all()
-        results = []
-        from app.services.playback_session import PlaybackSessionService
-        for p in playlists:
-            songs_count = len(p.songs)
-            total_duration = sum((ps.song.duration or 0.0) for ps in p.songs)
-            stats = PlaybackSessionService.get_playlist_stats(current_user=current_user, playlist_id=p.id, session=session)
-            results.append({
-                "id": p.id,
-                "name": p.name,
-                "description": p.description,
-                "created_at": p.created_at.isoformat(),
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                "prompt": p.prompt,
-                "strategy": p.strategy,
-                "seed_type": p.seed_type,
-                "generated_by": p.generated_by,
-                "generator_version": p.generator_version,
-                "llm_model": p.llm_model,
-                "created_from": p.created_from,
-                "songs_count": songs_count,
-                "total_duration": total_duration,
-                "play_count": stats["play_count"],
-                "last_played_at": stats["last_played_at"],
-            })
-        return results
+        return [playlist_metadata_dict(row) for row in query.order_by(Playlist.id.desc()).offset(offset).limit(limit).all()]
 
     @staticmethod
     def get_playlist_details(
@@ -576,55 +611,16 @@ class PlaylistService:
         """Retrieves complete details of a single user-owned playlist."""
         user_id = current_user.id or 1
 
-        playlist = (
-            session.query(Playlist)
-            .filter_by(id=playlist_id, user_id=user_id)
-            .first()
-        )
-        if not playlist:
+        row = playlist_metadata_query(session, user_id).filter(Playlist.id == playlist_id).first()
+        if not row:
             return None
-
-        from app.services.playback_session import PlaybackSessionService
-        stats = PlaybackSessionService.get_playlist_stats(current_user=current_user, playlist_id=playlist_id, session=session)
-        songs_count = len(playlist.songs)
-        total_duration = sum((ps.song.duration or 0.0) for ps in playlist.songs)
-
-        seed_song_title = playlist.seed_song.title if playlist.seed_song else None
-
-        return {
-            "id": playlist.id,
-            "name": playlist.name,
-            "description": playlist.description,
-            "created_at": playlist.created_at.isoformat(),
-            "updated_at": playlist.updated_at.isoformat() if playlist.updated_at else None,
-            "prompt": playlist.prompt,
-            "strategy": playlist.strategy,
-            "seed_type": playlist.seed_type,
-            "seed_song_id": playlist.seed_song_id,
-            "seed_song_title": seed_song_title,
-            "generated_by": playlist.generated_by,
-            "generator_version": playlist.generator_version,
-            "llm_model": playlist.llm_model,
-            "created_from": playlist.created_from,
-            "songs_count": songs_count,
-            "total_duration": total_duration,
-            "play_count": stats["play_count"],
-            "last_played_at": stats["last_played_at"],
-            "songs": [
-                {
-                    "id": ps.song.id,
-                    "title": ps.song.title,
-                    "artist": ps.song.artist,
-                    "album": ps.song.album,
-                    "duration": ps.song.duration,
-                    "genre": ps.song.original_genre or "Unknown",
-                    "position": ps.position,
-                    "artwork_available": ps.song.cover_art is not None,
-                    "date_added": playlist.created_at.strftime("%b %d, %Y") if playlist.created_at else None,
-                }
-                for ps in playlist.songs if ps.song
-            ],
-        }
+        result = playlist_metadata_dict(row)
+        playlist = row[0]
+        result["seed_song_title"] = session.query(Song.title).filter(Song.id == playlist.seed_song_id).scalar() if playlist.seed_song_id else None
+        result["songs"] = PlaylistService.get_playlist_songs(current_user, playlist_id, session)
+        for song in result["songs"]:
+            song["date_added"] = playlist.created_at.strftime("%b %d, %Y") if playlist.created_at else None
+        return result
 
     @staticmethod
     def get_playlist_songs(
@@ -635,27 +631,12 @@ class PlaylistService:
         """Retrieves all songs belonging to a user-owned playlist ordered by position."""
         user_id = current_user.id or 1
 
-        playlist = (
-            session.query(Playlist)
-            .filter_by(id=playlist_id, user_id=user_id)
-            .first()
-        )
-        if not playlist:
-            return []
-
-        results = []
-        for ps in playlist.songs:
-            s = ps.song
-            if s:
-                results.append({
-                    "id": s.id,
-                    "title": s.title,
-                    "artist": s.artist,
-                    "album": s.album,
-                    "duration": s.duration,
-                    "position": ps.position,
-                })
-        return results
+        rows = (song_metadata_query(session).add_columns(PlaylistSong.position)
+                .join(PlaylistSong, PlaylistSong.song_id == Song.id)
+                .join(Playlist, Playlist.id == PlaylistSong.playlist_id)
+                .filter(Playlist.id == playlist_id, Playlist.user_id == user_id)
+                .order_by(PlaylistSong.position).all())
+        return [dict(row._mapping, genre=row.genre or "Unknown") for row in rows]
 
     @staticmethod
     def delete_playlist(

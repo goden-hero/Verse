@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="index.css?v=20260803-logo">
+  <link rel="stylesheet" href="index.css?v=20261103-request-resolution">
 </head>
 <body class="auth-locked">
   <!-- Authentication Shell -->
@@ -162,6 +162,7 @@
       <div class="sidebar-section playlists-section">
         <div class="section-header">
           <h3 class="section-title">Playlists</h3>
+          <button type="button" class="manual-playlist-button" data-create-manual-playlist>Create playlist</button>
         </div>
         <ul class="playlist-sidebar-list" id="sidebar-playlists">
           <!-- Dynamic Playlists Load Here -->
@@ -216,7 +217,10 @@
         </section>
 
         <section class="home-section" style="margin-bottom: 28px;">
-          <h2 class="section-heading">Recently Added</h2>
+          <div class="section-header">
+            <h2 class="section-heading">Recently Added</h2>
+            <button type="button" class="manual-playlist-button" data-create-manual-playlist>Create playlist</button>
+          </div>
           <div class="playlists-grid" id="recently-added-grid">
             <!-- Dynamic Recently Added cards render here -->
           </div>
@@ -366,6 +370,7 @@
         <header class="section-header-large">
           <h1 class="view-title">Create Playlist</h1>
           <p class="subtitle">Customize recommendation rules to generate customized mixes</p>
+          <button type="button" class="manual-playlist-button" data-create-manual-playlist>Create playlist manually</button>
         </header>
         
         <div class="playlist-generator-container">
@@ -509,6 +514,7 @@
 
           <!-- Playlist Action Toolbar -->
           <div class="playlist-detail-actions">
+            <button type="button" class="manual-playlist-button" id="btn-playlist-add-songs" disabled>Add songs</button>
             <button class="playlist-play-main-btn" id="btn-playlist-play-all" title="Play All">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </button>
@@ -861,6 +867,7 @@
           <!-- Playlists Section -->
           <div class="sidebar-section">
             <h3 class="section-title">Your Playlists</h3>
+            <button type="button" class="manual-playlist-button" data-create-manual-playlist>Create playlist</button>
             <ul class="playlist-sidebar-list" id="mobile-drawer-playlists">
               <li class="playlist-loading-item">Loading playlists...</li>
             </ul>
@@ -999,22 +1006,79 @@
   <audio id="main-audio-element" style="display:none;"></audio>
 
   <!-- Search Overlay -->
-  <div class="search-overlay" id="search-overlay">
-    <div class="search-overlay-content">
+  <div class="search-overlay" id="search-overlay" inert>
+    <div class="search-overlay-content" role="dialog" aria-modal="true" aria-label="Search and select library songs">
       <div class="search-overlay-input-row">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Search song title or artist..." autocomplete="off">
+        <input type="search" class="search-overlay-input" id="search-overlay-input" aria-label="Search title, artist, or album" placeholder="Search title, artist, or album..." autocomplete="off">
+        <button type="button" class="manual-playlist-button" id="btn-close-search" aria-label="Close search">Close</button>
         <span class="search-overlay-hint">Press <kbd>Esc</kbd> to close</span>
       </div>
+      <div class="search-selection-toolbar">
+        <span id="search-selection-count" role="status" aria-live="polite">0 selected</span>
+        <button type="button" class="manual-playlist-button" id="btn-clear-song-selection" disabled>Clear selection</button>
+        <button type="button" class="manual-playlist-button primary" id="btn-add-selection" disabled>Add to playlist</button>
+        <small>Select songs with the checkboxes. Use Play to listen. Songs are added in selection order.</small>
+      </div>
+      <div id="search-load-status" class="manual-playlist-status" role="status" aria-live="polite"></div>
+      <button type="button" class="manual-playlist-button" id="btn-retry-song-search" hidden>Retry search</button>
+      <h3 class="discovery-heading">In your library</h3>
       <div class="search-overlay-results" id="search-overlay-results">
         <!-- Search result entries will populate dynamically -->
       </div>
+      <section class="external-search-section" aria-label="External song discovery">
+        <h3 class="discovery-heading">Available to request</h3>
+        <div class="manual-playlist-status" id="external-search-status" role="status" aria-live="polite">Search to discover more songs.</div>
+        <button type="button" class="manual-playlist-button" id="btn-retry-external-search" hidden>Retry external search</button>
+        <div id="external-search-results"></div>
+      </section>
+      <details id="song-requests-panel" class="song-requests-panel">
+        <summary id="song-requests-summary">Song requests</summary>
+        <div id="song-requests-status" class="manual-playlist-status" role="status"></div>
+        <button type="button" class="manual-playlist-button" id="btn-refresh-song-requests">Refresh requests</button>
+        <div id="song-requests-list"></div>
+      </details>
     </div>
   </div>
 
+  <dialog id="manual-playlist-dialog" class="manual-playlist-dialog" aria-labelledby="manual-playlist-title">
+    <div class="section-header">
+      <h2 id="manual-playlist-title">Create playlist</h2>
+      <button type="button" class="manual-playlist-button" id="btn-close-playlist-dialog" aria-label="Close playlist dialog">Close</button>
+    </div>
+    <p id="manual-playlist-error" role="alert" class="manual-playlist-error" hidden></p>
+    <div id="playlist-picker-panel">
+      <label class="form-label" for="playlist-picker-search">Find a playlist</label>
+      <input type="search" class="form-input" id="playlist-picker-search" placeholder="Search playlists by name" autocomplete="off">
+      <p id="playlist-picker-status" role="status" class="manual-playlist-status"></p>
+      <button type="button" class="manual-playlist-button" id="btn-retry-playlist-picker" hidden>Retry loading playlists</button>
+      <div id="playlist-picker-list" class="playlist-picker-list" role="group" aria-label="Destination playlist"></div>
+      <p id="playlist-picker-destination" class="manual-playlist-status"></p>
+      <div class="manual-playlist-actions">
+        <button type="button" class="manual-playlist-button" id="btn-picker-create">Create new playlist</button>
+        <button type="button" class="manual-playlist-button primary" id="btn-confirm-playlist-add" disabled>Add songs</button>
+      </div>
+    </div>
+    <form id="manual-playlist-form" hidden>
+      <div class="form-group">
+        <label class="form-label" for="manual-playlist-name">Name</label>
+        <input class="form-input" id="manual-playlist-name" name="name" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="manual-playlist-description">Description (optional)</label>
+        <textarea class="form-input" id="manual-playlist-description" name="description" rows="3"></textarea>
+      </div>
+      <div class="manual-playlist-actions">
+        <button type="button" class="manual-playlist-button" id="btn-cancel-playlist-create">Cancel</button>
+        <button type="submit" class="manual-playlist-button primary" id="btn-submit-manual-playlist">Create playlist</button>
+      </div>
+    </form>
+  </dialog>
+  <div id="playlist-notice" class="playlist-notice" role="status" aria-live="polite" hidden></div>
+
   <!-- Application Logic -->
-  <script src="index.js?v=20261101-sessions"></script>
+  <script src="index.js?v=20261103-request-resolution"></script>
 </body>
 </html>

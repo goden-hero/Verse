@@ -1,0 +1,22 @@
+# Example only. Replace paths/user, review configuration, then install yourself.
+[Unit]
+Description=Verse persistent song request worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=verse
+WorkingDirectory=/absolute/path/to/Verse
+EnvironmentFile=/absolute/path/to/Verse/.env
+# Run the documented identity backfill ONCE before enabling this service.
+Environment=PATH=/absolute/path/to/Verse/.venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/absolute/path/to/Verse/.venv/bin/python -m app.main request-worker
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

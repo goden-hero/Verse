@@ -1,0 +1,20 @@
+# Activated as pyro's user service; lingering is enabled on this host.
+[Unit]
+Description=Verse-test song acquisition worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pyro/apps/Verse-test
+EnvironmentFile=/home/pyro/apps/Verse-test/.env
+Environment=PATH=/home/pyro/apps/Verse-test/.venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pyro/apps/Verse-test/.venv/bin/python -m app.main request-worker
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,4 +1,6 @@
+import io
 import pytest
+from PIL import Image
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
@@ -195,8 +197,10 @@ def test_song_artwork(api_client, db_session):
     """Tests the GET /api/v1/songs/{id}/artwork endpoint."""
     # 1. Song with no artwork
     song_no_art = Song(path="/no_art.mp3", hash="no_art_hash", title="No Art", artist="A", cover_art=None)
-    # 2. Song with mock artwork bytes
-    mock_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    # 2. Real PNG artwork: verify the bytes AND their actual response MIME type.
+    output = io.BytesIO()
+    Image.new("RGB", (16, 16), "purple").save(output, format="PNG")
+    mock_bytes = output.getvalue()
     song_with_art = Song(path="/with_art.mp3", hash="with_art_hash", title="With Art", artist="B", cover_art=mock_bytes)
     db_session.add_all([song_no_art, song_with_art])
     db_session.commit()
@@ -209,4 +213,4 @@ def test_song_artwork(api_client, db_session):
     resp_with_art = api_client.get(f"/api/v1/songs/{song_with_art.id}/artwork")
     assert resp_with_art.status_code == 200
     assert resp_with_art.content == mock_bytes
-    assert resp_with_art.headers["content-type"] == "image/jpeg"
+    assert resp_with_art.headers["content-type"] == "image/png"

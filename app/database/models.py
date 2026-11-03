@@ -117,6 +117,42 @@ class Song(Base):
         return f"<Song(id={self.id}, title='{self.title}', artist='{self.artist}')>"
 
 
+class SongSource(Base):
+    """Exact catalogue identity; never infer identity from a song title."""
+    __tablename__ = "song_sources"
+    identity_key: Mapped[str] = mapped_column(String(180), primary_key=True)
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), index=True)
+
+
+class SongRequest(Base):
+    __tablename__ = "song_requests"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    identity_key: Mapped[str] = mapped_column(String(180), unique=True, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_json: Mapped[str | None] = mapped_column(String, nullable=True)
+    downloaded_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    song_id: Mapped[int | None] = mapped_column(ForeignKey("songs.id", ondelete="SET NULL"), nullable=True)
+
+
+class DiscoveryCache(Base):
+    __tablename__ = "discovery_cache"
+    key: Mapped[str] = mapped_column(String(240), primary_key=True)
+    payload: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[float] = mapped_column(Float, index=True)
+
+
+class CatalogueBudget(Base):
+    __tablename__ = "catalogue_budgets"
+    provider: Mapped[str] = mapped_column(String(30), primary_key=True)
+    next_allowed_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 class TechnicalMetadata(Base):
     """Represents detailed, low-level technical features of the audio file."""
 

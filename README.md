@@ -230,6 +230,15 @@ Recursively scan and index a local music directory (extracts technical metadata,
 
 ---
 
+### External song requests
+
+The existing search overlay can discover catalogue recordings and enqueue song
+requests without interrupting local playback. Acquisition runs in a separate,
+persistent SQLite worker; only the newly acquired file is indexed before Play/Add
+becomes available. See [configuration, migration, provider requirements and worker
+service instructions](docs/external-song-requests.md). This needs explicit server
+configuration and a worker; it is not automatically deployed or started.
+
 ## Testing
 
 Run the full pytest suite to verify scanner, metadata extraction, database models, features, FAISS search, recommendation logic, AI orchestrator, and desktop layouts:

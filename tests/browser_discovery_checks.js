@@ -1,0 +1,121 @@
+(async()=>{
+  const check=(value,message)=>{if(!value)throw new Error(message);};
+  const wait=async fn=>{for(let i=0;i<450;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('Wait timed out: '+String(fn));};
+  const el=id=>document.getElementById(id);
+  const query=async value=>{el('search-overlay-input').value=value;el('search-overlay-input').dispatchEvent(new Event('input',{bubbles:true}));await wait(()=>searchState.query===value&&el('search-overlay-results').getAttribute('aria-busy')==='false');};
+  await wait(()=>currentState.songs.length===100&&discoveryState.jobs.has('prior-request'));
+  check(discoveryState.jobs.get('prior-request').state==='failed','saved failed request did not restore on app startup');
+  const firstRow=el('songs-table-body').firstElementChild,audio=el('main-audio-element');
+  let playCalls=0,paused=true;
+  Object.defineProperty(audio,'paused',{get:()=>paused});
+  audio.play=async()=>{playCalls++;paused=false;audio.dispatchEvent(new Event('playing'));};
+  audio.pause=()=>{paused=true;audio.dispatchEvent(new Event('pause'));};
+  await playSong(manualApi.songs[0],manualApi.songs.slice(0,5));
+  const playingSrc=audio.getAttribute('src');
+  showSearchOverlay();discoveryApi.hold=true;
+  await query('Song 001');
+  check(searchState.results.length===1,'local results not immediate');
+  check(el('external-search-status').textContent.includes('Searching'),'external loading not independent');
+  await wait(()=>discoveryApi.pending.length===1);
+  const localRow=el('search-overlay-results').firstElementChild;
+  discoveryApi.pending.shift().resolve(cloneReply({provider:'spotify',can_request:true,results:[externalTrack('A'.repeat(22))]}));
+  await wait(()=>el('external-search-results').querySelector('[data-discovery-action="request"]'));
+  check(localRow===el('search-overlay-results').firstElementChild,'external search replaced local rows');
+  discoveryApi.hold=false;
+  discoveryApi.loseRequest=true;
+  let button=el('external-search-results').querySelector('[data-discovery-action="request"]');button.click();button.click();
+  await wait(()=>discoveryState.pending.size===0&&discoveryState.errors.size===1);
+  check(searchState.isOpen,'request action closed search while replacing its button');
+  check(discoveryApi.calls.filter(call=>call.method==='POST'&&call.path.endsWith('/song-requests')).length===1,'duplicate POST sent');
+  button=el('external-search-results').querySelector('[data-discovery-action="request"]');
+  check(!button.disabled&&el('external-search-results').textContent.includes('Response lost'),'request failure not recoverable');
+  button.click();await wait(()=>discoveryState.jobs.has('new-request'));
+  check(discoveryApi.jobs.length===2,'lost response retry created duplicate jobs');
+  check(el('external-search-results').textContent.includes('Queued'),'queue status not shown');
+  const externalRow=el('external-search-results').firstElementChild;
+  for(const state of ['resolving','downloading','indexing']) {
+    discoveryApi.jobs=discoveryApi.jobs.map(job=>job.id==='new-request'?{...job,state,updated_at:requestTick()}:job);
+    await wait(()=>!discoveryState.polling);await refreshSongRequests();
+    check(discoveryState.jobs.get('new-request').state===state,'request state not synchronized');
+    check(externalRow===el('external-search-results').firstElementChild,'polling rebuilt external row');
+  }
+  discoveryApi.failPoll=true;await refreshSongRequests();
+  check(discoveryState.jobs.get('new-request').state==='indexing'&&el('song-requests-status').textContent.includes('retained'),'status failure lost request');
+  discoveryApi.failPoll=false;
+  // Terminal errors replace processing labels and stop active polling. An old
+  // search snapshot must not put the same failed recording back in Resolving.
+  const staleJob={...discoveryState.jobs.get('new-request'),state:'resolving',error:'Old attempt failed'};
+  discoveryApi.jobs=discoveryApi.jobs.map(job=>job.id==='new-request'?{...job,state:'failed',error:'No suitable recording found',updated_at:requestTick()}:job);
+  await refreshSongRequests();
+  check(el('external-search-results').textContent.includes('Failed — not processing')&&!el('external-search-results').textContent.includes('Resolving recording'),'failed external result retained processing label');
+  check(el('song-requests-list').querySelector('[data-request-id="new-request"] .request-state').textContent.includes('Failed'),'history retained processing label');
+  check(discoveryState.pollTimer===null,'terminal request keeps polling');
+  check(!acceptRequestJob(staleJob),'older request status overwrote terminal failure');
+  renderExternalSongs();renderSongRequests();
+  check(!el('external-search-results').textContent.includes('Old attempt failed'),'stale error replaced terminal error');
+  // Ambiguity is persisted, is not work in progress, and has a touch-friendly
+  // version picker with recovery when choosing a version fails.
+  const options=[externalTrack('A'.repeat(22)),{...externalTrack('C'.repeat(22)),album:'Another release',version:'Alternative pressing'}];
+  discoveryApi.jobs=discoveryApi.jobs.map(job=>job.id==='new-request'?{...job,state:'awaiting_choice',error:null,candidates:options,updated_at:requestTick()}:job);
+  await refreshSongRequests();
+  check(discoveryState.pollTimer===null,'awaiting-choice request keeps polling as active');
+  check(el('external-search-results').textContent.includes('Choose version')&&!el('external-search-results').textContent.includes('Resolving'),'ambiguity has wrong state');
+  const picker=el('external-search-results').querySelector('.request-version-picker');
+  check(picker&&picker.querySelectorAll('[data-discovery-action="choose-version"]').length===2,'candidate choices absent');
+  check(picker.textContent.includes('Requested artist')&&picker.textContent.includes('3:00')&&picker.textContent.includes('Alternative pressing'),'candidate attributes absent');
+  check(picker.getBoundingClientRect().right<=innerWidth&&picker.querySelector('button').getBoundingClientRect().height>=44,'version picker not touch/viewport friendly');
+  discoveryApi.failChoice=true;picker.querySelector('button').click();
+  check(el('external-search-results').querySelector('[data-discovery-action="choose-version"]').disabled,'pending choice can be submitted twice');
+  await wait(()=>!discoveryState.pending.size);
+  check(discoveryState.jobs.get('new-request').state==='awaiting_choice'&&el('external-search-results').textContent.includes('Selection temporarily unavailable'),'failed choice lost options or recovery');
+  discoveryApi.failChoice=false;
+  el('external-search-results').querySelector('[data-discovery-action="choose-version"]').click();
+  await wait(()=>!discoveryState.pending.size&&discoveryState.jobs.get('new-request').state==='queued');
+  check(discoveryApi.jobs.length===2&&!el('external-search-results').querySelector('.request-version-picker'),'choice created a new request or kept stale options');
+  check(!el('external-search-results').textContent.includes('Selection temporarily unavailable'),'successful choice retained old error');
+  const readySong={id:501,title:'Requested recording',artist:'Requested artist',album:'Studio album',duration:180,artwork_available:false};
+  manualApi.songs.push(readySong);
+  await wait(()=>!discoveryState.polling);
+  discoveryApi.jobs=discoveryApi.jobs.map(job=>job.id==='new-request'?{...job,state:'ready',song:readySong,updated_at:requestTick()}:job);
+  await refreshSongRequests();
+  check(el('external-search-results').querySelector('[data-discovery-action="play"]'),'ready track did not become playable');
+  check(audio.getAttribute('src')===playingSrc&&playCalls===1,'background request interrupted current playback');
+  check(firstRow===el('songs-table-body').firstElementChild,'request updates rebuilt library');
+  // Row Add is a single-song operation, independent of another local selection.
+  selectSearchResult(0);
+  check(searchState.selectedSongs.has(1),'local selection was not set before single-song Add: '+JSON.stringify([...searchState.selectedSongs.keys()]));
+  el('external-search-results').querySelector('[data-discovery-action="add"]').click();
+  await wait(()=>manualPlaylistState.playlists.length>0);
+  check(JSON.stringify(manualPlaylistState.songIds)==='[501]','ready Add included unrelated selected tracks');
+  el('playlist-picker-list').querySelector('input').click();el('btn-confirm-playlist-add').click();
+  await wait(()=>!manualPlaylistState.open);
+  check(searchState.selectedSongs.has(1),'single-song Add discarded other selections: '+JSON.stringify([...searchState.selectedSongs.keys()]));
+  el('external-search-results').querySelector('[data-discovery-action="play"]').click();
+  check(playCalls===2&&el('main-audio-element')===audio,'ready Play did not use the existing player');
+  const requestedSrc=audio.getAttribute('src');
+  // Catalogue failures do not break local search, even when local matches exist.
+  discoveryApi.failExternal=true;await query('Song 002');
+  await wait(()=>!el('btn-retry-external-search').hidden);
+  check(searchState.results[0].id===2&&el('external-search-status').textContent.includes('Catalogue temporarily unavailable'),'provider failure broke local search or lost useful error');
+  discoveryApi.failExternal=false;
+  // Reverse-order external responses, including a stale failure.
+  discoveryApi.hold=true;await query('older');await wait(()=>discoveryApi.pending.length===1);
+  const older=discoveryApi.pending.shift();
+  await query('Song 003');await wait(()=>discoveryApi.pending.length===1);
+  discoveryApi.pending.shift().resolve(cloneReply({provider:'spotify',can_request:true,results:[externalTrack('C'.repeat(22))]}));
+  await wait(()=>discoveryState.results[0]?.recording_id==='C'.repeat(22));
+  older.resolve(cloneReply({detail:'Stale provider failure'},503));await new Promise(r=>setTimeout(r,30));
+  check(discoveryState.results[0].recording_id==='C'.repeat(22)&&el('btn-retry-external-search').hidden,'stale external failure replaced current results');
+  discoveryApi.hold=false;
+  hideSearchOverlay();
+  currentState.activeTab='view-assistant';currentState.activeTab='view-home';
+  // Rehydrate from persistent API state rather than retaining only browser memory.
+  resetSongRequests();await refreshSongRequests();
+  check(discoveryState.jobs.get('new-request')?.state==='ready'&&discoveryState.jobs.get('prior-request')?.state==='failed','request status did not rehydrate');
+  showSearchOverlay();el('song-requests-panel').open=true;
+  const prior=el('song-requests-list').querySelector('[data-request-id="prior-request"]');
+  prior.querySelector('[data-discovery-action="retry"]').click();
+  await wait(()=>discoveryState.jobs.get('prior-request')?.state==='queued');
+  check(audio.getAttribute('src')===requestedSrc&&firstRow===el('songs-table-body').firstElementChild,'navigation/status retry disturbed playback/library');
+  window.manualPlaylistResult={passed:true,width:innerWidth,checks:['saved request bootstrap','independent local/external search','external with local matches','debounce/stale failure guards','lost response/deduplicated retry','all request states','terminal failure labels/no active polling','stale job rejection','ambiguous versions/choice recovery','status failure recovery','ready Play/Add','single-song picker scope','node/audio preservation','status rehydration','failed job retry']};
+})().catch(error=>{window.manualPlaylistResult={passed:false,error:error.stack||String(error)};});

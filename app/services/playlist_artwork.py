@@ -2,15 +2,18 @@
 
 import io
 import logging
-from functools import lru_cache
+from collections import OrderedDict
+from threading import RLock
+from sqlalchemy import event, func
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy.orm import Session
-from app.database.models import Playlist
+from app.database.models import Playlist, PlaylistSong, Song
 
 logger = logging.getLogger("music_rec.services.playlist_artwork")
 
 # Cache images in-memory (max 100 dynamic covers)
-_COVER_CACHE = {}
+_COVER_CACHE = OrderedDict()
+_COVER_LOCK = RLock()
 
 
 class PlaylistArtworkService:
@@ -82,20 +85,33 @@ class PlaylistArtworkService:
     @staticmethod
     def generate_cover(playlist_id: int, session: Session, target_size: tuple[int, int] = (500, 500)) -> bytes:
         """Generates dynamic playlist cover image binary (JPEG) according to track count rules."""
-        playlist = session.get(Playlist, playlist_id)
-        if not playlist:
+        with _COVER_LOCK:
+            return PlaylistArtworkService._generate_cover(playlist_id, session, target_size)
+
+    @staticmethod
+    def _generate_cover(playlist_id, session, target_size):
+        # Read only four small metadata rows before checking the cache.
+        rows = (session.query(Playlist.name, Playlist.updated_at, Song.id, Song.hash,
+                              func.length(Song.cover_art).label("art_size"))
+                .outerjoin(PlaylistSong, PlaylistSong.playlist_id == Playlist.id)
+                .outerjoin(Song, Song.id == PlaylistSong.song_id)
+                .filter(Playlist.id == playlist_id).order_by(PlaylistSong.position).limit(4).all())
+        if not rows:
             img = PlaylistArtworkService._create_placeholder_image(target_size, text="Verse")
             output = io.BytesIO()
             img.save(output, format="JPEG", quality=90)
             return output.getvalue()
 
-        # Collect ordered songs
-        songs = [ps.song for ps in playlist.songs if ps.song]
-        song_ids = tuple(s.id for s in songs)
-        cache_key = (playlist_id, len(song_ids), song_ids[:4], target_size)
+        cache_key = (playlist_id, str(session.get_bind().url), rows[0].updated_at,
+                     tuple((r.id, r.hash, r.art_size) for r in rows), target_size)
 
         if cache_key in _COVER_CACHE:
+            _COVER_CACHE.move_to_end(cache_key)
             return _COVER_CACHE[cache_key]
+
+        ids = [r.id for r in rows if r.id is not None]
+        by_id = {s.id: s for s in session.query(Song.id, Song.title, Song.cover_art).filter(Song.id.in_(ids)).all()} if ids else {}
+        songs = [by_id[sid] for sid in ids]
 
         W, H = target_size
         canvas = Image.new("RGB", (W, H), color=(20, 20, 25))
@@ -112,7 +128,7 @@ class PlaylistArtworkService:
 
         if num_images == 0:
             # 0 Songs: Placeholder cover
-            canvas = PlaylistArtworkService._create_placeholder_image((W, H), text=playlist.name)
+            canvas = PlaylistArtworkService._create_placeholder_image((W, H), text=rows[0].name)
 
         elif num_images == 1:
             # 1 Song: Full 500x500 artwork
@@ -177,11 +193,22 @@ class PlaylistArtworkService:
 
         # Cache result
         _COVER_CACHE[cache_key] = binary_data
+        while len(_COVER_CACHE) > 100:
+            _COVER_CACHE.popitem(last=False)
         return binary_data
 
     @staticmethod
     def invalidate_cover(playlist_id: int):
         """Invalidates in-memory cover cache for a playlist."""
-        keys_to_remove = [k for k in _COVER_CACHE.keys() if k[0] == playlist_id]
-        for k in keys_to_remove:
-            _COVER_CACHE.pop(k, None)
+        with _COVER_LOCK:
+            keys_to_remove = [k for k in _COVER_CACHE if k[0] == playlist_id]
+            for k in keys_to_remove:
+                _COVER_CACHE.pop(k, None)
+
+
+@event.listens_for(Song, "after_update")
+def _invalidate_updated_song(mapper, connection, song):
+    from sqlalchemy import inspect
+    if inspect(song).attrs.cover_art.history.has_changes():
+        with _COVER_LOCK:
+            _COVER_CACHE.clear()
